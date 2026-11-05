@@ -1,0 +1,2 @@
+// Optional per-developer signing. The project also builds unsigned without it.
+#include? "Signing.xcconfig"
