@@ -30,6 +30,8 @@ final class AgentController {
     private(set) var status = "AI 待命"
     private(set) var reason = ""
     private(set) var history: [AgentLogEntry] = []
+    /// 仅调试：感知诊断文字（-LogitPerceptionOnly）。发布版始终为空。
+    private(set) var diagnostics: String?
     var autoCaptureEnabled = true
     let modelName = AICredentials.displayName
 
@@ -361,6 +363,42 @@ final class AgentController {
     }
 
     #if DEBUG
+    /// 只运行感知层（不调用模型、不改硬件），在取景上显示测量与耗时，用于真机检查。
+    func startPerceptionProbe() {
+        demoLocked = true
+        diagnostics = "感知启动中…"
+        let sink: @Sendable (SceneMeasurement) -> Void = { [weak self] measurement in
+            Task { @MainActor in self?.probe(measurement) }
+        }
+        perceptionDo { await $0.start(onMeasurement: sink) }
+    }
+
+    @ObservationIgnored private var lastProbe: TimeInterval = 0
+
+    private func probe(_ m: SceneMeasurement) {
+        latest = m
+        subjectBox = m.primarySubject?.box
+        guard now - lastProbe > 0.5 else { return }
+        lastProbe = now
+        Task { [perception] in
+            let cost = await perception.fastTickMilliseconds
+            let tracking = await perception.trackingMilliseconds
+            let s = m.primarySubject
+            let lines = [
+                String(format: "快档 %.1f ms（跟踪 %.1f）", cost, tracking),
+                "主体 \(s?.kind.rawValue ?? "—")" + (s.map { String(format: " %.2f×%.2f", $0.box.width, $0.box.height) } ?? ""),
+                s?.eyeOpenness.map { String(format: "睁眼 %.2f", $0) } ?? "睁眼 —",
+                s?.yaw.map { String(format: "yaw %.0f°", $0) } ?? "yaw —",
+                m.horizonDegrees.map { String(format: "地平线 %.1f°", $0) } ?? "地平线 —",
+                String(format: "清晰 %.2f / %.2f", m.sharpness.global, m.sharpness.subject ?? -1),
+                String(format: "亮度 %.2f 高光 %.2f%%", m.luminance.mean, m.luminance.clipHigh * 100),
+                String(format: "抖动 %.3f 变化 %.3f", m.deviceAngularSpeed, m.sceneChange),
+                m.aesthetics.map { String(format: "美学 %.2f %@", $0.score, $0.labels.prefix(3).joined(separator: ",")) } ?? "美学 —"
+            ]
+            await MainActor.run { self.diagnostics = lines.joined(separator: "\n") }
+        }
+    }
+
     /// 演示模式：直接设置展示字段，不启动调度器、感知与网络。
     func setDemo(phase: AgentPhase, plan: ShotPlan?, genreName: String?, rubric: RubricResult?,
                  report: TriggerReport?, crop: CameraCore.NormalizedRect?, subject: CameraCore.NormalizedRect?,

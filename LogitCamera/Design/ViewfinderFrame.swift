@@ -1,3 +1,4 @@
+import CameraCore
 import SwiftUI
 
 /// 取景框四角刻线。AI 开启时变为青色并缓慢呼吸；
@@ -5,23 +6,29 @@ import SwiftUI
 struct ViewfinderFrame: View {
     let aiActive: Bool
     let scanTick: Int
+    /// AI 的裁切框；有值时四角刻线画在裁切框上。
+    var crop: CameraCore.NormalizedRect? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
             // 关键帧闭包是 @Sendable，只捕获高度值而不是 GeometryProxy。
             let height = geometry.size.height
+            let ticks = tickRect(in: geometry.size)
             ZStack(alignment: .top) {
                 TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !aiActive || reduceMotion)) { context in
                     CornerTicks(length: Theme.Metric.cornerTick)
                         .stroke(tickColor(at: context.date), style: StrokeStyle(lineWidth: 1.5, lineCap: .square))
-                        .padding(10)
+                        .frame(width: ticks.width, height: ticks.height)
+                        .position(x: ticks.midX, y: ticks.midY)
                 }
+                .animation(.linear(duration: 0.1), value: crop)
                 if aiActive && reduceMotion {
                     // 减少动态效果：角标闪亮一次代替扫描线。
                     CornerTicks(length: Theme.Metric.cornerTick)
                         .stroke(Theme.Palette.accent, style: StrokeStyle(lineWidth: 2.5, lineCap: .square))
-                        .padding(10)
+                        .frame(width: ticks.width, height: ticks.height)
+                        .position(x: ticks.midX, y: ticks.midY)
                         .keyframeAnimator(initialValue: Pulse(), trigger: scanTick) { content, value in
                             content.opacity(value.opacity)
                         } keyframes: { _ in
@@ -55,6 +62,12 @@ struct ViewfinderFrame: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private func tickRect(in size: CGSize) -> CGRect {
+        guard let crop else { return CGRect(origin: .zero, size: size).insetBy(dx: 10, dy: 10) }
+        return CGRect(x: crop.x * size.width, y: crop.y * size.height,
+                      width: crop.width * size.width, height: crop.height * size.height).insetBy(dx: 4, dy: 4)
     }
 
     private struct Scan {

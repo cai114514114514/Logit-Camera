@@ -4,10 +4,9 @@ import SwiftUI
 /// AI 就绪或倒计时时瞳孔移到中心，表示「对准了」。
 struct AIButton: View {
     let isOn: Bool
-    let stage: AgentStage
+    /// AI 已放行（就绪或正在拍）：瞳孔移到中心，表示「对准了」。
+    let aligned: Bool
     let action: () -> Void
-
-    private var aligned: Bool { isOn && (stage == .ready || stage == .countdown) }
 
     var body: some View {
         Button(action: action) {
@@ -66,9 +65,9 @@ struct LogitGlyph: Shape {
 
 #Preview {
     HStack(spacing: 30) {
-        AIButton(isOn: false, stage: .paused) {}
-        AIButton(isOn: true, stage: .observing) {}
-        AIButton(isOn: true, stage: .ready) {}
+        AIButton(isOn: false, aligned: false) {}
+        AIButton(isOn: true, aligned: false) {}
+        AIButton(isOn: true, aligned: true) {}
     }
     .padding()
     .background(.black)

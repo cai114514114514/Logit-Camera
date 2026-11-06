@@ -1,8 +1,8 @@
 import XCTest
 
-/// 设计审阅用：逐个演示场景启动 App 并保存截图。演示模式不发网络请求。
+/// 设计审阅用：逐个演示场景启动 App 并保存截图。演示模式不发网络请求、不运行调度器。
 final class DesignScreenshotTests: XCTestCase {
-    private let scenarios = ["idle", "observing", "adjusted", "ready", "countdown", "manual", "error"]
+    private let scenarios = ["idle", "scouting", "tracking", "armed", "cooldown", "landscape", "manual", "error"]
 
     @MainActor
     func testCaptureEveryScenario() {
@@ -16,23 +16,27 @@ final class DesignScreenshotTests: XCTestCase {
             attach(app, name: scenario)
 
             switch scenario {
-            case "observing":
-                // 演示模式不得启动真实 Agent：10 秒内轮次不变。
-                let agent = app.descendants(matching: .any)["camera.agent"].firstMatch
-                XCTAssertTrue(agent.waitForExistence(timeout: 5))
-                let before = agent.value as? String
-                Thread.sleep(forTimeInterval: 10)
-                XCTAssertEqual(agent.value as? String, before, "demo must not run real agent rounds")
-                attach(app, name: "observing-later")
-                // 扫描线每 2 秒播放一次、持续 0.9 秒：连拍几张以捕捉到它。
+            case "scouting":
+                // 扫描线每 2 秒一次、持续 0.9 秒：连拍几张以捕捉到它。
                 for index in 0..<6 {
                     attach(app, name: "scan-\(index)")
                     Thread.sleep(forTimeInterval: 0.15)
                 }
-            case "ready":
+            case "tracking":
+                // 演示模式不得启动真实循环：轮次保持不变。
+                let agent = app.descendants(matching: .any)["camera.agent"].firstMatch
+                XCTAssertTrue(agent.waitForExistence(timeout: 5))
+                let before = agent.value as? String
+                Thread.sleep(forTimeInterval: 6)
+                XCTAssertEqual(agent.value as? String, before, "demo must not run real agent rounds")
+            case "armed":
+                XCTAssertTrue(app.buttons["camera.disarm"].exists)
                 app.descendants(matching: .any)["camera.agent"].firstMatch.tap()
                 XCTAssertTrue(app.switches["camera.autoCapture"].waitForExistence(timeout: 5))
-                attach(app, name: "ready-detail-sheet")
+                attach(app, name: "armed-detail")
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 0.8)
+                attach(app, name: "armed-detail-rubric")
             case "idle":
                 app.buttons["camera.aiSettings"].tap()
                 Thread.sleep(forTimeInterval: 1)
@@ -42,6 +46,24 @@ final class DesignScreenshotTests: XCTestCase {
             }
             app.terminate()
         }
+    }
+
+    /// 真机感知检查：只运行感知层，读取诊断叠层（快档耗时与测量）。
+    @MainActor
+    func testPerceptionProbe() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-LogitPerceptionOnly"]
+        app.launch()
+        let diagnostics = app.staticTexts["camera.diagnostics"]
+        XCTAssertTrue(diagnostics.waitForExistence(timeout: 15))
+        Thread.sleep(forTimeInterval: 8)
+        attach(app, name: "perception")
+        let label = diagnostics.label
+        let attachment = XCTAttachment(string: label)
+        attachment.name = "perception-text"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertTrue(label.contains("快档"), label)
     }
 
     @MainActor

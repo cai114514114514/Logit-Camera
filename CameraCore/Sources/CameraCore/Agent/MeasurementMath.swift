@@ -20,17 +20,25 @@ public enum MeasurementMath {
     public static let clipLowLevel: UInt8 = 5
 
     public static func luminance(_ image: LumaImage, subject: NormalizedRect?) -> LuminanceStats {
-        var bins = [Double](repeating: 0, count: 64)
+        var bins = [Int](repeating: 0, count: 64)
         var high = 0, low = 0, sum = 0
-        for value in image.bytes {
-            bins[Int(value) >> 2] += 1
-            sum += Int(value)
-            if value >= clipHighLevel { high += 1 }
-            if value <= clipLowLevel { low += 1 }
+        let count = image.bytes.count
+        image.bytes.withUnsafeBufferPointer { buffer in
+            guard let p = buffer.baseAddress else { return }
+            bins.withUnsafeMutableBufferPointer { b in
+                guard let bp = b.baseAddress else { return }
+                for i in 0..<count {
+                    let value = Int(p[i])
+                    bp[value >> 2] += 1
+                    sum += value
+                    if value >= Int(clipHighLevel) { high += 1 }
+                    if value <= Int(clipLowLevel) { low += 1 }
+                }
+            }
         }
-        let count = Double(max(image.bytes.count, 1))
-        return LuminanceStats(histogram: bins.map { $0 / count }, clipHigh: Double(high) / count,
-                              clipLow: Double(low) / count, mean: Double(sum) / count / 255,
+        let total = Double(max(count, 1))
+        return LuminanceStats(histogram: bins.map { Double($0) / total }, clipHigh: Double(high) / total,
+                              clipLow: Double(low) / total, mean: Double(sum) / total / 255,
                               subjectMean: subject.flatMap { mean(image, in: $0) })
     }
 
@@ -38,23 +46,26 @@ public enum MeasurementMath {
     public static func sharpness(_ image: LumaImage, region: NormalizedRect?) -> Double {
         let (x0, y0, x1, y1) = pixelBounds(image, region ?? .full)
         guard x1 - x0 >= 3, y1 - y0 >= 3 else { return 0 }
-        var sum = 0.0, sumSquares = 0.0, luma = 0.0, n = 0.0
+        var sum = 0, sumSquares = 0, luma = 0, n = 0
         let w = image.width
-        image.bytes.withUnsafeBufferPointer { p in
+        image.bytes.withUnsafeBufferPointer { buffer in
+            guard let p = buffer.baseAddress else { return }
             for y in (y0 + 1)..<(y1 - 1) {
+                let row = y * w
                 for x in (x0 + 1)..<(x1 - 1) {
-                    let c = Double(p[y * w + x])
-                    let lap = (Double(p[y * w + x - 1]) + Double(p[y * w + x + 1])
-                               + Double(p[(y - 1) * w + x]) + Double(p[(y + 1) * w + x]) - 4 * c) / 255
+                    let c = Int(p[row + x])
+                    let lap = Int(p[row + x - 1]) + Int(p[row + x + 1]) + Int(p[row - w + x]) + Int(p[row + w + x]) - 4 * c
                     sum += lap
                     sumSquares += lap * lap
-                    luma += c / 255
+                    luma += c
                     n += 1
                 }
             }
         }
-        let variance = max(0, sumSquares / n - (sum / n) * (sum / n))
-        let mean = luma / n
+        let count = Double(n)
+        let meanLap = Double(sum) / count / 255
+        let variance = max(0, Double(sumSquares) / count / (255 * 255) - meanLap * meanLap)
+        let mean = Double(luma) / count / 255
         let normalized = variance / (mean * mean + 0.01)
         return normalized / (normalized + 0.02)
     }
@@ -69,16 +80,24 @@ public enum MeasurementMath {
         return min(1, ratio / 0.3)
     }
 
-    /// 16×16 区块平均亮度签名。
+    /// 16×16 区块平均亮度签名（单次遍历）。
     public static func signature(_ image: LumaImage) -> [UInt8] {
-        var result = [UInt8](repeating: 0, count: 256)
-        for by in 0..<16 {
-            for bx in 0..<16 {
-                let rect = NormalizedRect(x: Double(bx) / 16, y: Double(by) / 16, width: 1.0 / 16, height: 1.0 / 16)
-                result[by * 16 + bx] = UInt8(((mean(image, in: rect) ?? 0) * 255).rounded())
+        var sums = [Int](repeating: 0, count: 256)
+        var counts = [Int](repeating: 0, count: 256)
+        let w = image.width, h = image.height
+        image.bytes.withUnsafeBufferPointer { buffer in
+            guard let p = buffer.baseAddress else { return }
+            for y in 0..<h {
+                let block = (y * 16 / h) * 16
+                let row = y * w
+                for x in 0..<w {
+                    let index = block + x * 16 / w
+                    sums[index] += Int(p[row + x])
+                    counts[index] += 1
+                }
             }
         }
-        return result
+        return (0..<256).map { counts[$0] > 0 ? UInt8((Double(sums[$0]) / Double(counts[$0])).rounded()) : 0 }
     }
 
     /// 去均值后的平均绝对差（0…1）：整体变亮变暗不算场景变化。
@@ -94,7 +113,13 @@ public enum MeasurementMath {
         let (x0, y0, x1, y1) = pixelBounds(image, rect)
         guard x1 > x0, y1 > y0 else { return nil }
         var sum = 0
-        for y in y0..<y1 { for x in x0..<x1 { sum += Int(image.bytes[y * image.width + x]) } }
+        image.bytes.withUnsafeBufferPointer { buffer in
+            guard let p = buffer.baseAddress else { return }
+            for y in y0..<y1 {
+                let row = y * image.width
+                for x in x0..<x1 { sum += Int(p[row + x]) }
+            }
+        }
         return Double(sum) / Double((x1 - x0) * (y1 - y0)) / 255
     }
 

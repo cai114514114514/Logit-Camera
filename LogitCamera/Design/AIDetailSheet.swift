@@ -1,7 +1,7 @@
 import CameraCore
 import SwiftUI
 
-/// 点开状态线后的 AI 详情：完整理由、最近一次变化、自动拍摄开关。Agent 照常运行。
+/// AI 详情：当前方案、拍摄条件、七项评分与证据、决策记录、自动拍摄开关。Agent 照常运行。
 struct AIDetailSheet: View {
     let model: CameraModel
     @Environment(\.dismiss) private var dismiss
@@ -18,29 +18,44 @@ struct AIDetailSheet: View {
                                 .frame(width: 7, height: 7)
                             Text(agent.status).font(.subheadline.weight(.semibold))
                             Spacer()
-                            Text("第 \(agent.round) 轮 · 确认 \(agent.confirmationCount)/2")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                            Text("第 \(agent.calls) 轮").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         }
-                        Text(agent.reason.isEmpty ? "还没有调整理由。开启 AI 后，每轮的判断会显示在这里。" : agent.reason)
+                        Text(agent.reason.isEmpty ? "开启 AI 后，导演的判断会显示在这里。" : agent.reason)
                             .font(.callout)
                             .foregroundStyle(agent.reason.isEmpty ? .secondary : .primary)
                     }
                     .padding(.vertical, 4)
                 }
 
-                if !agent.changes.isEmpty {
-                    Section("最近一次调整（硬件回读）") {
-                        ForEach(agent.changes) { change in
-                            LabeledContent(change.title) {
-                                HStack(spacing: 6) {
-                                    Text(change.before).foregroundStyle(.secondary)
-                                    Image(systemName: "arrow.right").font(.caption2)
-                                    Text(change.after).foregroundStyle(Theme.Palette.accent)
+                if let plan = agent.plan, !agent.isDefaultPlan {
+                    Section("拍摄方案 · \(agent.genreName ?? plan.genre.rawValue)") {
+                        Text(plan.rationale)
+                        LabeledContent("构图") { Text(AgentText.composition(plan.composition)).font(.caption) }
+                        LabeledContent("曝光") { Text(AgentText.exposure(plan.exposure)).font(.caption) }
+                    }
+                }
+
+                if let report = agent.report, !agent.isDefaultPlan {
+                    Section("拍摄条件（全部满足即拍）") {
+                        ForEach(Array(report.statuses.enumerated()), id: \.offset) { _, status in
+                            HStack {
+                                Image(systemName: status.satisfied ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(status.satisfied ? Theme.Palette.accent : .secondary)
+                                Text(AgentText.trigger(status.trigger.kind))
+                                Spacer()
+                                if let threshold = status.trigger.threshold {
+                                    Text(String(format: "%.2f", threshold)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                                 }
-                                .font(.system(.callout, design: .monospaced))
                             }
                         }
+                    }
+                }
+
+                if let rubric = agent.rubric {
+                    Section("评审评分") {
+                        RubricBars(result: rubric, weights: agent.rubricWeights,
+                                   genreName: agent.plan.flatMap { try? Knowledge.playbook($0.genre).genreCriterion.name } ?? "题材特有项")
+                            .padding(.vertical, 4)
                     }
                 }
 
@@ -48,22 +63,32 @@ struct AIDetailSheet: View {
                     Toggle(isOn: Binding(get: { agent.autoCaptureEnabled }, set: model.setAutoCapture)) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("自动拍摄")
-                            Text(agent.autoCaptureEnabled ? "两次确认且画面稳定后，倒计时 3 秒拍一张" : "由你按下快门")
+                            Text(agent.autoCaptureEnabled ? "评审放行后，条件全部满足的瞬间拍一张" : "AI 只提示「就绪」，由你按下快门")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     .accessibilityIdentifier("camera.autoCapture")
-                    if agent.autoCaptureEnabled && !agent.captureArmed {
+                    if agent.phase == .cooldown {
                         Button {
                             model.armAutoCapture()
                         } label: {
                             Label("再拍一张", systemImage: "camera")
                         }
-                        .disabled(model.state.phase != .ready || model.isSaving || model.capturePending)
                         .accessibilityIdentifier("camera.rearm")
                     }
                 } footer: {
-                    Text("AI 没有直接按快门的能力：它只能声明「可以拍」，由相机检查稳定性后倒计时。")
+                    Text("AI 没有快门权限：它只给出方案和评分，由相机在条件满足时按下快门。每个场景自动拍一张。")
+                }
+
+                if !agent.history.isEmpty {
+                    Section("最近决策") {
+                        ForEach(agent.history) { entry in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.text).font(.caption)
+                                Text(entry.date, style: .time).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
 
                 Section {
@@ -74,7 +99,7 @@ struct AIDetailSheet: View {
             }
             .scrollContentBackground(.hidden)
             .background(Theme.Palette.background)
-            .navigationTitle("AI 副驾驶")
+            .navigationTitle("AI 导演")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }

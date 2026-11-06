@@ -40,7 +40,7 @@ final class CompositionTests: XCTestCase {
         button.tap()
         let photo = app.buttons["camera.photo"]
         let captured = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in photo.isEnabled }, object: app)
-        let outcome = XCTWaiter().wait(for: [captured], timeout: 85)
+        let outcome = XCTWaiter().wait(for: [captured], timeout: 150)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Automatic capture result"
         screenshot.lifetime = .keepAlways

@@ -1,51 +1,39 @@
 import CameraCore
 import SwiftUI
 
-/// AI 每次调整成功后，在取景框底部浮出一行：哪些参数变了，以及为什么。4 秒后淡出。
+/// 出新方案时在取景框底部浮出一行：题材与理由。4 秒后淡出。
 struct AIAnnotation: View {
     let agent: AgentController
     @State private var visibleID: UUID?
 
+    private var planID: UUID? { agent.isDefaultPlan ? nil : agent.plan?.id }
+
     var body: some View {
         ZStack {
-            if let id = visibleID, id == agent.adjustmentID {
-                content.transition(.opacity.combined(with: .offset(y: 6)))
+            if let id = visibleID, id == planID, agent.isEnabled, let plan = agent.plan {
+                content(plan).transition(.opacity.combined(with: .offset(y: 6)))
             }
         }
         .animation(.easeOut(duration: 0.3), value: visibleID)
         .allowsHitTesting(false)
-        .task(id: agent.adjustmentID) {
-            guard let id = agent.adjustmentID else { return }
+        .task(id: planID) {
+            guard let id = planID else { return }
             visibleID = id
             guard (try? await Task.sleep(for: Theme.Motion.annotationLifetime)) != nil else { return }
             if visibleID == id { visibleID = nil }
         }
     }
 
-    private var content: some View {
-        VStack(spacing: 4) {
-            if !agent.changes.isEmpty {
-                HStack(spacing: 10) {
-                    ForEach(agent.changes) { change in
-                        HStack(spacing: 3) {
-                            Text(change.before).foregroundStyle(Theme.Palette.inkTertiary)
-                            Image(systemName: "arrow.right").font(.system(size: 8, weight: .semibold))
-                                .foregroundStyle(Theme.Palette.accentDim)
-                            Text(change.after).foregroundStyle(Theme.Palette.accent)
-                        }
-                    }
-                }
+    private func content(_ plan: ShotPlan) -> some View {
+        VStack(spacing: 3) {
+            Text(agent.genreName ?? plan.genre.rawValue)
                 .font(Theme.Typeface.labelMono)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            }
-            if !agent.reason.isEmpty {
-                Text(agent.reason)
-                    .font(Theme.Typeface.body)
-                    .foregroundStyle(Theme.Palette.ink)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-            }
+                .foregroundStyle(Theme.Palette.accent)
+            Text(plan.rationale)
+                .font(Theme.Typeface.body)
+                .foregroundStyle(Theme.Palette.ink)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

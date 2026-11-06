@@ -63,8 +63,11 @@ struct CameraView: View {
 
     // MARK: Layout
 
+    /// AI 开启时取景显示传感器全画幅（3:4），裁切框标出 AI 的构图。
+    private var showsFullFrame: Bool { agent.isEnabled || agent.diagnostics != nil }
+
     private func previewSize(in available: CGSize) -> CGSize {
-        let ratio = CGFloat(model.state.ratio.widthToHeight)
+        let ratio = CGFloat((showsFullFrame ? FrameRatio.standard : model.state.ratio).widthToHeight)
         let width = min(available.width, available.height * ratio)
         return CGSize(width: width, height: width / ratio)
     }
@@ -87,15 +90,35 @@ struct CameraView: View {
                       markerColor: agent.isEnabled ? UIColor(Theme.Palette.accent) : .white)
             .background(.black)
             .overlay {
-                ViewfinderFrame(aiActive: agent.isEnabled && agent.stage != .paused,
-                                scanTick: agent.observationTick)
+                if agent.isEnabled, let crop = agent.crop {
+                    CropOverlay(crop: crop, subject: agent.subjectBox)
+                } else if agent.diagnostics != nil {
+                    CropOverlay(crop: .full, subject: agent.subjectBox)
+                }
+            }
+            .overlay {
+                ViewfinderFrame(aiActive: agent.isEnabled && agent.phase != .paused && agent.phase != .cooldown,
+                                scanTick: agent.observationTick,
+                                crop: agent.isEnabled ? agent.crop : nil)
+            }
+            .overlay(alignment: .topLeading) {
+                if let diagnostics = agent.diagnostics {
+                    Text(diagnostics)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Theme.Palette.accent)
+                        .padding(6)
+                        .background(.black.opacity(0.6))
+                        .padding(8)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("camera.diagnostics")
+                }
             }
             .overlay {
                 if model.state.phase != .ready { statusOverlay }
             }
             .clipped()
             .gesture(pinch)
-            .accessibilityIdentifier("camera.preview")
+            // camera.preview 标识由 UIKit 预览视图提供；这里再设会覆盖叠层（裁切框、诊断）的标识。
     }
 
     private func focus(_ point: CGPoint) {
@@ -196,7 +219,8 @@ struct CameraView: View {
             HStack(spacing: 0) {
                 photoButton.frame(maxWidth: .infinity)
                 ShutterButton(model: model)
-                AIButton(isOn: agent.isEnabled, stage: agent.stage, action: model.toggleAI)
+                AIButton(isOn: agent.isEnabled, aligned: agent.phase == .armed || agent.phase == .capturing,
+                         action: model.toggleAI)
                     .disabled(model.state.phase != .ready || model.isSaving || model.capturePending)
                     .frame(maxWidth: .infinity)
             }

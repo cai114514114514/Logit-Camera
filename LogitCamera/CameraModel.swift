@@ -68,6 +68,10 @@ final class CameraModel {
             demoApplied = true
             applyDemo(demo)
         }
+        if !demoApplied, ProcessInfo.processInfo.arguments.contains("-LogitPerceptionOnly") {
+            demoApplied = true
+            agent.startPerceptionProbe()
+        }
         #endif
     }
 

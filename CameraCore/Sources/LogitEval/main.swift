@@ -51,11 +51,36 @@ func report(_ rubric: RubricResult, _ playbook: GenrePlaybook) {
                  rubric.modelVerdict.rawValue, rubric.verdict(weights: playbook.rubricWeights).rawValue))
 }
 
+/// 快档纯计算的耗时（320×240 灰度图）：亮度统计、两次清晰度、签名与场景变化。
+func bench() {
+    let width = 240, height = 320
+    var seed: UInt64 = 42
+    let bytes = (0..<(width * height)).map { _ -> UInt8 in
+        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+        return UInt8(truncatingIfNeeded: seed >> 56)
+    }
+    let image = LumaImage(width: width, height: height, bytes: bytes)
+    let subject = NormalizedRect(x: 0.1, y: 0.1, width: 0.8, height: 0.7)
+    let baseline = MeasurementMath.signature(image)
+    let rounds = 200
+    let start = ContinuousClock.now
+    var sink = 0.0
+    for _ in 0..<rounds {
+        let stats = MeasurementMath.luminance(image, subject: subject)
+        sink += stats.mean + MeasurementMath.sharpness(image, region: nil) + MeasurementMath.sharpness(image, region: subject)
+        sink += MeasurementMath.sceneChange(baseline, MeasurementMath.signature(image))
+    }
+    let elapsed = ContinuousClock.now - start
+    let ms = (Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15) / Double(rounds)
+    print(String(format: "快档计算 %.3f ms/帧（%d 轮，校验 %.1f）", ms, rounds, sink))
+}
+
 do {
     switch arguments.first {
+    case "bench": bench()
     case "probe" where arguments.count == 2: try await probe(arguments[1])
     default:
-        print("用法：LogitEval probe <image>")
+        print("用法：LogitEval probe <image> | bench")
         exit(2)
     }
 } catch {

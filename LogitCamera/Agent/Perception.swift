@@ -1,4 +1,3 @@
-import Accelerate
 import CameraCore
 import CoreVideo
 import Foundation
@@ -24,10 +23,14 @@ actor Perception {
     private var tracked: (box: CameraCore.NormalizedRect, kind: SubjectKind)?
     private var lastPrimaryCenter: (point: CameraCore.NormalizedPoint, time: TimeInterval)?
     private var lastFrameTime: TimeInterval = 0
+    private var midRunning = false
+    private var slowRunning = false
     private var lastMid: TimeInterval = 0
     private var lastSlow: TimeInterval = 0
     /// 快档单次耗时的滑动平均（毫秒），供诊断显示。
     private(set) var fastTickMilliseconds = 0.0
+    /// 其中主体跟踪（Vision）所占的毫秒数。
+    private(set) var trackingMilliseconds = 0.0
 
     init(frames: FrameGrabber) {
         self.frames = frames
@@ -77,20 +80,24 @@ actor Perception {
         guard let (buffer, timestamp) = frames.latestBuffer(), timestamp > lastFrameTime else { return 0.05 }
         lastFrameTime = timestamp
         let frame = FrameBuffer(pixelBuffer: buffer, timestamp: timestamp)
-        let started = ProcessInfo.processInfo.systemUptime
 
+        // 中、慢档在独立任务中运行，不阻塞快档；上一轮未完成就跳过。
         if thermal != .critical {
-            if timestamp - lastMid >= 0.25 * scale {
+            if !midRunning, timestamp - lastMid >= 0.25 * scale {
                 lastMid = timestamp
-                await runMidTier(frame)
+                midRunning = true
+                Task { await self.runMidTier(frame) }
             }
-            if timestamp - lastSlow >= 1.0 * scale {
+            if !slowRunning, timestamp - lastSlow >= 1.0 * scale {
                 lastSlow = timestamp
-                salient = try? await detectors.saliency(frame)
-                aesthetics = try? await detectors.aesthetics(frame)
+                slowRunning = true
+                Task { await self.runSlowTier(frame) }
             }
         }
+        let started = ProcessInfo.processInfo.systemUptime
         await updateTracking(frame)
+        let tracked = (ProcessInfo.processInfo.systemUptime - started) * 1000
+        trackingMilliseconds = trackingMilliseconds == 0 ? tracked : trackingMilliseconds * 0.9 + tracked * 0.1
 
         guard let luma = Self.luma(buffer) else { return 0.1 * scale }
         let signature = MeasurementMath.signature(luma)
@@ -117,7 +124,14 @@ actor Perception {
         return max(0.02, 0.1 * scale - cost / 1000)
     }
 
+    private func runSlowTier(_ frame: FrameBuffer) async {
+        defer { slowRunning = false }
+        salient = try? await detectors.saliency(frame)
+        aesthetics = try? await detectors.aesthetics(frame)
+    }
+
     private func runMidTier(_ frame: FrameBuffer) async {
+        defer { midRunning = false }
         faces = (try? await detectors.faces(frame)) ?? []
         if preferred == .body || (preferred == nil && faces.isEmpty) {
             bodies = (try? await detectors.bodies(frame)) ?? []
@@ -193,23 +207,31 @@ actor Perception {
 
     // MARK: - Luma
 
-    /// Y 平面经 vImage 缩放为长边 320 的灰度图。
+    /// Y 平面按步长采样为长边约 320 的灰度图（每个输出像素取 2×2 个采样点的平均）。
+    /// 全分辨率帧上做高质量重采样太贵；这些测量不需要高质量缩放。
     static func luma(_ buffer: CVPixelBuffer) -> LumaImage? {
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         guard CVPixelBufferGetPlaneCount(buffer) >= 1, let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return nil }
         let width = CVPixelBufferGetWidthOfPlane(buffer, 0), height = CVPixelBufferGetHeightOfPlane(buffer, 0)
-        let scale = 320 / Double(max(width, height))
-        let outWidth = max(1, Int(Double(width) * scale)), outHeight = max(1, Int(Double(height) * scale))
-        var source = vImage_Buffer(data: base, height: vImagePixelCount(height), width: vImagePixelCount(width),
-                                   rowBytes: CVPixelBufferGetBytesPerRowOfPlane(buffer, 0))
+        let rowBytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        let step = max(1, max(width, height) / 320)
+        let outWidth = max(1, width / step), outHeight = max(1, height / step)
+        let half = max(1, step / 2)
+        let source = base.assumingMemoryBound(to: UInt8.self)
         var bytes = [UInt8](repeating: 0, count: outWidth * outHeight)
-        let status = bytes.withUnsafeMutableBytes { pointer -> vImage_Error in
-            var destination = vImage_Buffer(data: pointer.baseAddress, height: vImagePixelCount(outHeight),
-                                            width: vImagePixelCount(outWidth), rowBytes: outWidth)
-            return vImageScale_Planar8(&source, &destination, nil, vImage_Flags(kvImageNoFlags))
+        bytes.withUnsafeMutableBufferPointer { out in
+            guard let o = out.baseAddress else { return }
+            for y in 0..<outHeight {
+                let y0 = y * step, y1 = min(height - 1, y0 + half)
+                let row0 = source + y0 * rowBytes, row1 = source + y1 * rowBytes
+                for x in 0..<outWidth {
+                    let x0 = x * step, x1 = min(width - 1, x0 + half)
+                    let sum = Int(row0[x0]) + Int(row0[x1]) + Int(row1[x0]) + Int(row1[x1])
+                    o[y * outWidth + x] = UInt8(sum >> 2)
+                }
+            }
         }
-        guard status == kvImageNoError else { return nil }
         return LumaImage(width: outWidth, height: outHeight, bytes: bytes)
     }
 }
