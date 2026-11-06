@@ -51,7 +51,11 @@ extension CameraModel {
                 await waitUntilReady()
                 capture.setAperture(4)
                 agentOwnsSettings = true
-                agent.adjustmentID = UUID()
+                // 标注 4 秒后淡出；演示中每 3 秒重新触发，保证截图时可见。
+                while agent.isEnabled {
+                    agent.adjustmentID = UUID()
+                    try? await Task.sleep(for: .seconds(3))
+                }
             }
         case .ready:
             agent.stage = .ready
