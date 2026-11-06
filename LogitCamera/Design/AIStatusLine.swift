@@ -25,7 +25,7 @@ struct AIStatusLine: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.Palette.inkTertiary)
             }
-            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .font(Theme.Typeface.bodyMono)
             .lineLimit(1)
             .padding(.horizontal, 14)
             .frame(height: Theme.Metric.statusHeight)

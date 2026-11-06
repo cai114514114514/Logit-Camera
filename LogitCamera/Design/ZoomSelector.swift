@@ -17,8 +17,10 @@ struct ZoomSelector: View {
                     let active = activeStop == stop
                     Button { model.setZoom(stop) } label: {
                         Text(active ? CameraText.zoom(Float(zoom)) : CameraText.zoom(Float(stop)))
-                            .font(.system(size: active ? 12 : 11, weight: active ? .semibold : .medium,
-                                          design: .monospaced))
+                            .font(.system(active ? .caption : .caption2, design: .monospaced,
+                                          weight: active ? .semibold : .medium))
+                            .minimumScaleFactor(0.6)
+                            .lineLimit(1)
                             .foregroundStyle(active ? Theme.color(for: origin) : Theme.Palette.inkSecondary)
                             .frame(width: active ? 40 : 32, height: active ? 40 : 32)
                             .background(Color.black.opacity(0.5), in: Circle())

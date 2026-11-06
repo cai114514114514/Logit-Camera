@@ -54,10 +54,11 @@ struct ShutterButton: View {
             Text("\(value)")
                 .font(Theme.Typeface.countdown)
                 .contentTransition(.numericText(countsDown: true))
-            Text("取消").font(.system(size: 9, weight: .semibold))
+            Text("取消").font(Theme.Typeface.label)
                 .foregroundStyle(Theme.Palette.inkSecondary)
         }
         .foregroundStyle(Theme.Palette.accent)
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("自动拍摄倒计时")

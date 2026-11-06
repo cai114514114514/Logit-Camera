@@ -33,9 +33,9 @@ extension CameraModel {
                 while let agent, agent.isEnabled {
                     agent.stage = .observing
                     agent.observationTick += 1
-                    try? await Task.sleep(for: .seconds(1.2))
+                    try? await Task.sleep(for: .seconds(0.9))
                     agent.stage = .thinking
-                    try? await Task.sleep(for: .seconds(3.8))
+                    try? await Task.sleep(for: .seconds(1.1))
                 }
             }
         case .adjusted:
@@ -67,11 +67,13 @@ extension CameraModel {
             Task { [weak agent] in
                 while let agent, agent.isEnabled {
                     for number in [3, 2, 1] {
+                        guard agent.isEnabled else { break }
                         agent.stage = .countdown
                         agent.countdown = number
                         try? await Task.sleep(for: .seconds(1))
                     }
                 }
+                agent?.countdown = nil
             }
         case .manual:
             agent.isEnabled = false

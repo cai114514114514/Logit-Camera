@@ -17,11 +17,14 @@ enum Theme {
     }
 
     enum Typeface {
-        static var readout: Font { .system(size: 13, weight: .medium, design: .monospaced).monospacedDigit() }
-        static var readoutLarge: Font { .system(size: 15, weight: .medium, design: .monospaced).monospacedDigit() }
-        static var label: Font { .system(size: 10, weight: .semibold) }
-        static var body: Font { .system(size: 12, weight: .regular) }
-        static var countdown: Font { .system(size: 30, weight: .ultraLight, design: .rounded).monospacedDigit() }
+        // 全部基于文字样式，跟随动态字体；HUD 用 hudTypeSize() 限制上限。
+        static var readout: Font { .system(.footnote, design: .monospaced, weight: .medium).monospacedDigit() }
+        static var readoutLarge: Font { .system(.subheadline, design: .monospaced, weight: .medium).monospacedDigit() }
+        static var label: Font { .system(.caption2, weight: .semibold) }
+        static var labelMono: Font { .system(.caption2, design: .monospaced, weight: .medium) }
+        static var body: Font { .system(.caption) }
+        static var bodyMono: Font { .system(.caption, design: .monospaced, weight: .medium) }
+        static var countdown: Font { .system(.title, design: .rounded, weight: .ultraLight).monospacedDigit() }
     }
 
     enum Metric {

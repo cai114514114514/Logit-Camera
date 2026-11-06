@@ -19,7 +19,7 @@ struct ManualDial: View {
                 ForEach(Mode.allCases, id: \.self) { item in
                     Button { mode = item } label: {
                         VStack(spacing: 4) {
-                            Text(item.rawValue).font(.system(size: 12, weight: .semibold))
+                            Text(item.rawValue).font(.system(.caption, weight: .semibold))
                                 .foregroundStyle(mode == item ? Theme.Palette.ink : Theme.Palette.inkTertiary)
                             Rectangle().fill(mode == item ? Theme.Palette.ink : .clear).frame(width: 14, height: 1.5)
                         }
@@ -32,7 +32,7 @@ struct ManualDial: View {
                 Spacer()
                 if state.isApplying { ProgressView().controlSize(.mini) }
                 Button("全部自动", action: model.resetCamera)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(.caption, weight: .medium))
                     .foregroundStyle(Theme.Palette.inkSecondary)
                     .disabled(!state.canCapture)
                     .frame(minHeight: 32)
@@ -96,7 +96,7 @@ struct ManualDial: View {
         return Button { model.setAperture(value) } label: {
             VStack(spacing: 5) {
                 Text(title)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular, design: .monospaced))
+                    .font(.system(.footnote, design: .monospaced, weight: selected ? .semibold : .regular))
                     .lineLimit(1)
                     .fixedSize()
                 Rectangle().fill(selected ? color : Theme.Palette.hairline)
@@ -135,7 +135,7 @@ struct ManualDial: View {
                         .position(x: CGFloat((tick - lower) / (upper - lower)) * width, y: 22)
                     if major {
                         Text(tick == 0 ? "0" : String(format: "%+.0f", tick))
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(.caption2, design: .monospaced))
                             .foregroundStyle(Theme.Palette.inkTertiary)
                             .position(x: CGFloat((tick - lower) / (upper - lower)) * width, y: 38)
                     }
@@ -143,7 +143,7 @@ struct ManualDial: View {
                 Rectangle().fill(Theme.Palette.ink).frame(width: 2, height: 22)
                     .position(x: position, y: 20)
                 Text(CameraText.bias(draftBias))
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(.caption2, design: .monospaced, weight: .semibold))
                     .foregroundStyle(Theme.Palette.ink)
                     .position(x: min(max(position, 18), width - 18), y: 2)
             }

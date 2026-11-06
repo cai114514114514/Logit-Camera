@@ -24,6 +24,11 @@ final class DesignScreenshotTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 10)
                 XCTAssertEqual(agent.value as? String, before, "demo must not run real agent rounds")
                 attach(app, name: "observing-later")
+                // 扫描线每 2 秒播放一次、持续 0.9 秒：连拍几张以捕捉到它。
+                for index in 0..<6 {
+                    attach(app, name: "scan-\(index)")
+                    Thread.sleep(forTimeInterval: 0.15)
+                }
             case "ready":
                 app.descendants(matching: .any)["camera.agent"].firstMatch.tap()
                 XCTAssertTrue(app.switches["camera.autoCapture"].waitForExistence(timeout: 5))

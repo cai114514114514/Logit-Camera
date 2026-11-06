@@ -76,6 +76,7 @@ final class CameraAgent {
 
     func stop() {
         isEnabled = false
+        faulted = false
         pause()
         status = "AI 待命"
         reason = ""

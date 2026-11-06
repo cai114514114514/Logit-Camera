@@ -21,7 +21,8 @@ struct AIButton: View {
                     .frame(width: 22, height: 22)
                     .animation(.spring(duration: 0.4), value: aligned)
                 Text("AI")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(.caption2, design: .monospaced, weight: .bold))
+                    .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                     .foregroundStyle(isOn ? Theme.Palette.accent : Theme.Palette.inkSecondary)
             }
             .frame(width: 56, height: 56)

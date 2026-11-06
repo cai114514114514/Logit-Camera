@@ -35,7 +35,7 @@ struct AIAnnotation: View {
                         }
                     }
                 }
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(Theme.Typeface.labelMono)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             }
