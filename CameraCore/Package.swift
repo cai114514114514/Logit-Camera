@@ -7,6 +7,7 @@ let package = Package(
     products: [.library(name: "CameraCore", targets: ["CameraCore"])],
     targets: [
         .target(name: "CameraCore", resources: [.copy("Resources/Knowledge")]),
+        .executableTarget(name: "LogitEval", dependencies: ["CameraCore"]),
         .testTarget(name: "CameraCoreTests", dependencies: ["CameraCore"])
     ]
 )

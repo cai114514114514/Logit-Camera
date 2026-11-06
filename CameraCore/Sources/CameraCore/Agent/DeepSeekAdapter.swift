@@ -79,7 +79,8 @@ public struct DeepSeekAdapter: VisionModel {
                       allowed: [String]) async throws -> Reply {
         var body: [String: JSONValue] = [
             "model": .string(Self.model), "messages": .array(messages), "tools": .array(tools),
-            "tool_choice": "required", "stream": false,
+            // 思考模式不支持 tool_choice = required（真实 API 返回 400），只能 auto；提示词要求恰好调用一个工具。
+            "tool_choice": thinking ? "auto" : "required", "stream": false,
             "thinking": ["type": thinking ? "enabled" : "disabled"],
             "max_tokens": .number(thinking ? 8000 : 600)
         ]

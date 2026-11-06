@@ -206,3 +206,14 @@ private func portrait() throws -> GenrePlaybook { try Knowledge.playbook(.portra
     #expect(ModelError.rateLimited.isRetryable)
     #expect(ModelError.truncated.isRetryable)
 }
+
+/// 真实 API：思考模式不支持 tool_choice = required（HTTP 400）。scout 仍强制调用工具。
+@Test func judgeDoesNotForceToolChoiceInThinkingMode() async throws {
+    let transport = StubTransport([(200, completion([("classify_scene", scoutArgs)])),
+                                   (200, completion([("set_plan", .object(["plan": planArgs(), "rubric": rubricArgs()]))]))])
+    let model = adapter(transport)
+    _ = try await model.scout(frame, plan: nil)
+    _ = try await model.judge(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
+    #expect(try transport.body(0)["tool_choice"] == .string("required"))
+    #expect(try transport.body(1)["tool_choice"] == .string("auto"))
+}
