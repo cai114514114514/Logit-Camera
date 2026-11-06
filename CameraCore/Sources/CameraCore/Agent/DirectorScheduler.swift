@@ -42,6 +42,10 @@ public enum SchedulerEvent: Sendable {
     case judgeReply(generation: Int, JudgeResult)
     case requestFailed(generation: Int, retryable: Bool)
     case captured, rearm
+    /// 用户在就绪时点快门：本场景不再自动拍摄，进入冷却。
+    case disarm
+    /// 触发拍摄时相机拒绝（正在调整或保存）：回到跟踪。
+    case fireRejected
 }
 
 public enum SchedulerCommand: Equatable, Sendable {
@@ -166,6 +170,18 @@ public struct DirectorScheduler: Sendable {
             sceneChangeSince = nil
             approvedAt = nil
             return SchedulerOutput(resetBaseline: true)
+        case .disarm:
+            guard phase == .armed else { return SchedulerOutput() }
+            phase = .cooldown
+            sceneChangeSince = nil
+            approvedAt = nil
+            return SchedulerOutput(resetBaseline: true)
+        case .fireRejected:
+            guard phase == .capturing else { return SchedulerOutput() }
+            phase = .tracking
+            approvedAt = nil
+            nearlyReadySince = nil
+            return SchedulerOutput()
         case .rearm:
             guard phase == .cooldown else { return SchedulerOutput() }
             phase = .tracking

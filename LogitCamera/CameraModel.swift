@@ -12,8 +12,8 @@ struct CameraNotice: Equatable {
 
 @MainActor @Observable
 final class CameraModel {
-    let capture = CaptureSession()
-    let agent = CameraAgent()
+    let capture: CaptureSession
+    let agent: AgentController
     var state = CameraState()
     var latestPhoto: CapturedPhoto?
     var thumbnail: UIImage?
@@ -45,11 +45,18 @@ final class CameraModel {
     }
 
     init() {
+        let capture = CaptureSession()
+        self.capture = capture
+        agent = AgentController(capture: capture)
         capture.observe { [weak self] event in
             Task { @MainActor in self?.receive(event) }
         }
-        agent.onAutoCapture = { [weak self] in self?.takeAutomaticPhoto() ?? false }
-        agent.onAdjusted = { [weak self] in self?.agentOwnsSettings = true }
+        agent.onFire = { [weak self] crop in self?.takeAutomaticPhoto(crop: crop) ?? false }
+        agent.onPlanApplied = { [weak self] plan in
+            // AI 方案决定画幅；读数标为 AI 设定。
+            self?.agentOwnsSettings = true
+            self?.capture.setRatio(plan.composition.ratio)
+        }
     }
 
     func activate() {
@@ -96,11 +103,11 @@ final class CameraModel {
     }
 
     func toggleAI() {
-        if agent.isEnabled { agent.stop(); return }
+        if agent.isEnabled || agent.faulted { agent.stop(); return }
         guard let apiKey else { showsSettings = true; return }
         guard state.canCapture, !isSaving else { post("相机就绪后即可开启 AI。"); return }
         notice = nil
-        agent.enable(capture: capture, key: apiKey)
+        agent.enable(key: apiKey)
     }
 
     func setRatio(_ value: FrameRatio) { takeOver("画幅"); capture.setRatio(value) }
@@ -133,28 +140,33 @@ final class CameraModel {
         }
     }
     func setAutoCapture(_ enabled: Bool) { agent.setAutoCapture(enabled) }
-    func armAutoCapture() { agent.armAutoCapture() }
-    func cancelAutoCapture() { agent.cancelAutoCapture() }
+    /// 冷却中「再拍一张」。
+    func armAutoCapture() { agent.rearm() }
+    /// 就绪时点快门：本场景不再自动拍摄。
+    func cancelAutoCapture() { agent.disarm() }
 
-    private func takeAutomaticPhoto() -> Bool {
+    private func takeAutomaticPhoto(crop: CameraCore.NormalizedRect?) -> Bool {
         guard foreground, canTakePhoto else { return false }
         automaticCapturePending = true
-        takePhoto()
+        takePhoto(crop: crop)
         return true
     }
 
     private func resumeAgentIfReady() {
-        guard foreground, state.canCapture, !capturePending, !isSaving, let apiKey else { return }
-        agent.resume(capture: capture, key: apiKey)
+        guard foreground, state.canCapture else { return }
+        agent.resume()
     }
 
+    /// 快门：AI 开启时按 AI 的裁切框拍（所见即所得），否则按画幅居中裁切。
     func takePhoto() {
+        takePhoto(crop: agent.isEnabled ? agent.crop : nil)
+    }
+
+    private func takePhoto(crop: CameraCore.NormalizedRect?) {
         guard canTakePhoto else { return }
-        // 手动快门不解除自动拍摄准备；自动拍摄在倒计时结束时自行解除。
-        agent.pause()
         capturePending = true
         notice = nil
-        capture.capture()
+        capture.capture(crop: crop)
     }
 
     func saveLatestPhoto() async {
@@ -164,7 +176,7 @@ final class CameraModel {
     }
 
     private func persistAndSave(_ photo: CapturedPhoto) async {
-        defer { isSaving = false; resumeAgentIfReady() }
+        defer { isSaving = false }
         var localURL = archivedURL
         if localURL == nil {
             let directory = URL.documentsDirectory.appendingPathComponent("待保存照片", isDirectory: true)
@@ -220,6 +232,7 @@ final class CameraModel {
         switch event {
         case .state(let state):
             self.state = state
+            agent.cameraState = state
             if state.phase != .ready && !state.isCapturing { capturePending = false }
             if state.phase == .ready { resumeAgentIfReady() }
             // 只在离开 ready 时暂停一次，避免每次读数刷新都重置 Agent 状态。
@@ -229,13 +242,14 @@ final class CameraModel {
             post(message, warning: true)
         case .captureRejected:
             capturePending = false
-            if automaticCapturePending { agent.armAutoCapture(); automaticCapturePending = false }
+            if automaticCapturePending { agent.fireRejected(); automaticCapturePending = false }
             post("相机正在调整，请稍后再拍。")
         case .captureFailed(let message):
             post(message, warning: true)
             capturePending = false
-            if automaticCapturePending { agent.armAutoCapture(); automaticCapturePending = false }
+            if automaticCapturePending { agent.fireRejected(); automaticCapturePending = false }
         case .photo(let photo):
+            agent.captured(photoID: photo.id, automatic: automaticCapturePending)
             automaticCapturePending = false
             capturePending = false
             latestPhoto = photo

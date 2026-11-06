@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 快门上方的一行 AI 状态。整行是按钮，点开 AI 详情。
 struct AIStatusLine: View {
-    let agent: CameraAgent
+    let agent: AgentController
     let onOpen: () -> Void
 
     var body: some View {

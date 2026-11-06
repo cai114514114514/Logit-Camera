@@ -238,3 +238,17 @@ private func armed() -> DirectorScheduler {
     #expect(s.phase == .planning)
     #expect(s.handle(.measurement(scene(14.7), far), now: 14.7).command == .callJudge(.plan(.portrait)))
 }
+
+@Test func disarmCoolsDownCurrentScene() {
+    var s = armed()
+    _ = s.handle(.disarm, now: 11.05)
+    #expect(s.phase == .cooldown)
+    #expect(s.handle(.measurement(scene(11.1), ready), now: 11.1).command == .none)
+}
+
+@Test func fireRejectedReturnsToTracking() {
+    var s = armed()
+    _ = s.handle(.measurement(scene(11.1), ready), now: 11.1)
+    _ = s.handle(.fireRejected, now: 11.2)
+    #expect(s.phase == .tracking)
+}

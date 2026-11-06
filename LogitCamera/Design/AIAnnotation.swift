@@ -3,7 +3,7 @@ import SwiftUI
 
 /// AI 每次调整成功后，在取景框底部浮出一行：哪些参数变了，以及为什么。4 秒后淡出。
 struct AIAnnotation: View {
-    let agent: CameraAgent
+    let agent: AgentController
     @State private var visibleID: UUID?
 
     var body: some View {

@@ -16,10 +16,7 @@ final class CaptureSession: NSObject, @unchecked Sendable {
     var onEvent: (@Sendable (CameraEvent) -> Void)?
     var processors: [Int64: PhotoCapture] = [:]
     var exposureRevision = 0
-    var agentToken: UUID?
-    var agentHardwareID: UUID?
     var needsExposureReset = false
-    var agentCompletion: (id: UUID, finish: @Sendable (Result<Void, Error>) -> Void)?
     private var configured = false
     private var wantsRunning = false
     private var timer: DispatchSourceTimer?
@@ -67,8 +64,6 @@ final class CaptureSession: NSObject, @unchecked Sendable {
         queue.async {
             self.wantsRunning = false
             self.needsExposureReset = self.needsExposureReset || self.state.isApplying
-            self.cancelAgentLocked()
-            self.agentHardwareID = nil
             self.exposureRevision += 1
             self.state.isApplying = false
             self.timer?.cancel()
@@ -92,7 +87,6 @@ final class CaptureSession: NSObject, @unchecked Sendable {
                 state.selectedAperture = nil
                 state.selectedISO = nil
                 state.selectedShutter = nil
-                agentHardwareID = nil
                 state.isApplying = false
                 exposureRevision += 1
                 needsExposureReset = false
@@ -207,7 +201,6 @@ final class CaptureSession: NSObject, @unchecked Sendable {
             guard let self else { return }
             self.queue.async {
                 self.needsExposureReset = self.needsExposureReset || self.state.isApplying
-                self.cancelAgentLocked()
                 self.exposureRevision += 1
                 self.state.isApplying = false
                 self.state.phase = .interrupted
@@ -227,7 +220,6 @@ final class CaptureSession: NSObject, @unchecked Sendable {
                 ?? "相机暂时不可用，请重试。"
             self.queue.async {
                 self.needsExposureReset = true
-                self.cancelAgentLocked()
                 self.exposureRevision += 1
                 self.state.phase = .unavailable
                 self.state.message = description

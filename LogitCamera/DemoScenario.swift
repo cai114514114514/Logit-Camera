@@ -3,9 +3,9 @@ import CameraCore
 import Foundation
 
 /// 仅调试版：`-LogitDemo <scenario>` 直接展示某个 AI 状态，用于不消耗 API 额度的界面截图。
-/// 演示期间 `CameraAgent.demoLocked` 阻止真实循环启动，不发任何网络请求。
+/// 演示期间 `AgentController.demoLocked` 阻止真实的调度器、感知与网络请求。
 enum DemoScenario: String, CaseIterable {
-    case idle, observing, adjusted, ready, countdown, manual, error
+    case idle, scouting, tracking, armed, cooldown, landscape, manual, error
 
     static var current: DemoScenario? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -18,80 +18,91 @@ extension CameraModel {
     func applyDemo(_ scenario: DemoScenario) {
         let agent = self.agent
         agent.demoLocked = true
-        guard scenario != .idle else { return }
-        agent.isEnabled = true
-        agent.round = 3
-        agent.reason = "主体处在逆光中偏暗，提高曝光并收小光圈，让人物和背景都清楚。"
+        let subject = CameraCore.NormalizedRect(x: 0.52, y: 0.28, width: 0.2, height: 0.16)
+        let portrait = demoPlan(.portrait, rationale: "逆光人像：脸朝左，主体放右三分，保住发丝高光")
+        let landscape = demoPlan(.landscape, ratio: .square, rationale: "方形裁掉底部暗水面，等云影打亮崖壁")
 
         switch scenario {
         case .idle:
             break
-        case .observing:
-            agent.stage = .observing
-            agent.status = "观察画面"
-            Task { [weak agent] in
-                while let agent, agent.isEnabled {
-                    agent.stage = .observing
-                    agent.observationTick += 1
-                    try? await Task.sleep(for: .seconds(0.9))
-                    agent.stage = .thinking
-                    try? await Task.sleep(for: .seconds(1.1))
-                }
-            }
-        case .adjusted:
-            agent.stage = .verifying
-            agent.status = "已调整 · 等待复核"
-            agent.changes = ParameterDelta.changed([
-                ParameterDelta(id: "aperture", title: "光圈", before: "ƒ/1.48", after: "ƒ/4"),
-                ParameterDelta(id: "bias", title: "曝光", before: "±0.0", after: "+0.3"),
-                ParameterDelta(id: "ratio", title: "画幅", before: "3:4", after: "3:4")
-            ])
+        case .scouting:
             Task { @MainActor in
-                // 在真实硬件上设定光圈，以展示 HUD 中「AI 设定」的青色读数。
-                await waitUntilReady()
-                capture.setAperture(4)
-                agentOwnsSettings = true
-                // 标注 4 秒后淡出；演示中每 3 秒重新触发，保证截图时可见。
-                while agent.isEnabled {
-                    agent.adjustmentID = UUID()
-                    try? await Task.sleep(for: .seconds(3))
+                while true {
+                    agent.setDemo(phase: .scouting, plan: nil, genreName: nil, rubric: nil, report: nil, crop: nil,
+                                  subject: subject, reason: "", tick: true)
+                    try? await Task.sleep(for: .seconds(2))
                 }
             }
-        case .ready:
-            agent.stage = .ready
-            agent.status = "准备拍摄 · 1/2 次确认"
-            agent.confirmationCount = 1
-        case .countdown:
-            agent.confirmationCount = 2
-            agent.status = "保持稳定 · 即将拍照"
-            Task { [weak agent] in
-                while let agent, agent.isEnabled {
-                    for number in [3, 2, 1] {
-                        guard agent.isEnabled else { break }
-                        agent.stage = .countdown
-                        agent.countdown = number
-                        try? await Task.sleep(for: .seconds(1))
-                    }
-                }
-                agent?.countdown = nil
-            }
+        case .tracking:
+            agentOwnsSettings = true
+            agent.setDemo(phase: .tracking, plan: portrait, genreName: "人像", rubric: demoRubric(2, light: 3, moment: 2),
+                          report: demoReport(portrait, eyes: 0.3), crop: demoCrop(portrait, subject), subject: subject,
+                          reason: "等她睁眼看向镜头", tick: true)
+        case .armed:
+            agentOwnsSettings = true
+            agent.setDemo(phase: .armed, plan: portrait, genreName: "人像", rubric: demoRubric(3, light: 4, moment: 3),
+                          report: demoReport(portrait, eyes: 0.9, sustained: false), crop: demoCrop(portrait, subject),
+                          subject: subject, reason: "光线与神情都到位，满足条件即拍")
+        case .cooldown:
+            agent.setDemo(phase: .cooldown, plan: portrait, genreName: "人像", rubric: demoRubric(3, light: 4, moment: 4),
+                          report: demoReport(portrait, eyes: 0.9), crop: demoCrop(portrait, subject), subject: subject,
+                          reason: "已拍摄")
+        case .landscape:
+            agentOwnsSettings = true
+            agent.setDemo(phase: .tracking, plan: landscape, genreName: "风光", rubric: demoRubric(2, light: 2, moment: 2),
+                          report: demoReport(landscape, eyes: nil), crop: demoCrop(landscape, nil), subject: nil,
+                          reason: "等云影或低角度暖光打亮崖壁")
         case .manual:
-            agent.isEnabled = false
-            agent.reason = ""
             post("你接管了光圈 · AI 已停止", offersResume: true, sticky: true)
         case .error:
-            agent.isEnabled = false
-            agent.faulted = true
-            agent.status = "AI 需要检查密钥"
-            agent.reason = "密钥无效或账户额度不足，请检查 AI 设置。"
-            agent.stage = .paused
+            agent.setDemo(phase: .off, plan: nil, genreName: nil, rubric: nil, report: nil, crop: nil, subject: nil,
+                          reason: "密钥无效或账户额度不足，请检查 AI 设置。", faulted: true)
         }
     }
 
-    private func waitUntilReady() async {
-        for _ in 0..<100 where state.phase != .ready {
-            try? await Task.sleep(for: .milliseconds(100))
+    private func demoPlan(_ genre: GenreID, ratio: FrameRatio? = nil, rationale: String) -> ShotPlan {
+        var plan = (try? Knowledge.playbook(genre).defaultPlan) ?? ShotPlan(
+            genre: genre, genreConfidence: 1, subject: .none,
+            composition: Composition(ratio: .standard, anchor: .init(x: 0.5, y: 0.5), subjectSize: .init(min: 0.3, max: 0.6), levelHorizon: false),
+            exposure: ExposureIntent(meter: .scene, subjectEV: 0, highlightClipMax: 0.01, aperture: .init(mode: .auto),
+                                     shutterFloor: nil, isoCeiling: nil),
+            triggers: [], rationale: rationale)
+        if let ratio { plan.composition.ratio = ratio }
+        if genre == .portrait { plan.composition.anchor = .init(x: 0.62, y: 0.36) }
+        plan.rationale = rationale
+        return plan
+    }
+
+    private func demoCrop(_ plan: ShotPlan, _ subject: CameraCore.NormalizedRect?) -> CameraCore.NormalizedRect {
+        CompositionSolver.solve(subject: subject, composition: plan.composition, sensorAspect: Executor.sensorAspect,
+                                salientCenter: CameraCore.NormalizedPoint(x: 0.5, y: 0.35)).crop
+    }
+
+    private func demoReport(_ plan: ShotPlan, eyes: Double?, sustained: Bool = false) -> TriggerReport {
+        var evaluator = TriggerEvaluator(plan: plan)
+        let face = Subject(id: 1, kind: .face, box: .init(x: 0.52, y: 0.28, width: 0.2, height: 0.16), confidence: 0.95,
+                           yaw: 8, pitch: 0, roll: 0, eyeOpenness: eyes, faceQuality: 0.7)
+        let m = SceneMeasurement(
+            timestamp: 0, subjects: eyes == nil ? [] : [face], primarySubjectID: eyes == nil ? nil : 1,
+            luminance: LuminanceStats(histogram: Array(repeating: 1.0 / 64, count: 64), clipHigh: 0.002, clipLow: 0,
+                                      mean: 0.45, subjectMean: 0.5),
+            sharpness: Sharpness(global: 0.7, subject: 0.75), horizonDegrees: 0.4, deviceAngularSpeed: 0.04,
+            subjectSpeed: 0, sceneChange: 0, aesthetics: nil)
+        return evaluator.update(m, now: 0, placementError: 0.02, exposureSettled: true)
+    }
+
+    private func demoRubric(_ base: Int, light: Int, moment: Int) -> RubricResult {
+        let evidence: [RubricCriterion: String] = [
+            .clarity: "主体清晰度 0.75，手机角速度 0.04", .exposure: "clipHigh=0.002，脸部亮度 0.50",
+            .composition: "脸在右三分附近，就位误差 0.02", .light: "左后方逆光勾出发丝轮廓",
+            .background: "背景是虚化的树影，无杂物", .moment: "表情放松，视线朝画面左侧",
+            .genre: "眼神自然，有情绪"
+        ]
+        let scores = RubricCriterion.allCases.map { criterion -> RubricScore in
+            let value = criterion == .light ? light : (criterion == .moment ? moment : base)
+            return RubricScore(criterion: criterion, score: value, evidence: evidence[criterion] ?? "")
         }
+        return RubricResult(scores: scores, modelVerdict: base >= 3 ? .approve : .wait)
     }
 }
 #endif

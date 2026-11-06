@@ -6,7 +6,7 @@ struct AIDetailSheet: View {
     let model: CameraModel
     @Environment(\.dismiss) private var dismiss
 
-    private var agent: CameraAgent { model.agent }
+    private var agent: AgentController { model.agent }
 
     var body: some View {
         NavigationStack {

@@ -14,6 +14,13 @@ public struct TriggerReport: Sendable, Equatable {
     public let sustained: Bool
     /// 全部满足，或只有一项未满足且差距不超过 20%：可以请评审放行。
     public let nearlyReady: Bool
+
+    public init(statuses: [TriggerStatus], allSatisfied: Bool, sustained: Bool, nearlyReady: Bool) {
+        self.statuses = statuses
+        self.allSatisfied = allSatisfied
+        self.sustained = sustained
+        self.nearlyReady = nearlyReady
+    }
 }
 
 /// 逐帧判定拍摄条件。测量超过 0.3 秒即视为过期，不满足任何条件。

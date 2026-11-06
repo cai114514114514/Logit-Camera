@@ -9,7 +9,7 @@ struct CameraView: View {
     @State private var pinchBase: Double?
     @Environment(\.scenePhase) private var scenePhase
 
-    private var agent: CameraAgent { model.agent }
+    private var agent: AgentController { model.agent }
 
     var body: some View {
         GeometryReader { geometry in
