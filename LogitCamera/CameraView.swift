@@ -47,7 +47,7 @@ struct CameraView: View {
         .sheet(isPresented: $model.showsPhoto) { PhotoDetailView(model: model) }
         .sheet(isPresented: $model.showsInfo) { CameraInfoView(state: model.state) }
         .sheet(isPresented: $model.showsControls) { CameraControlsSheet(model: model) }
-        .sheet(isPresented: $model.showsAISettings) { AISettingsView(model: model) }
+        .sheet(isPresented: $model.showsSettings) { AISettingsView(model: model) }
     }
 
     private func previewSize(in available: CGSize) -> CGSize {
@@ -69,7 +69,7 @@ struct CameraView: View {
             }
             .accessibilityIdentifier("camera.controls")
             CameraToolButton(symbol: "gearshape", label: "DeepSeek 设置") {
-                model.showsAISettings = true
+                model.showsSettings = true
             }
             .accessibilityIdentifier("camera.aiSettings")
         }

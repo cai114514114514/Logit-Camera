@@ -21,6 +21,8 @@ final class CameraAgent {
     var changes: [ParameterDelta] = []
     /// 每次真正截取一帧准备发给模型时自增，驱动取景扫描线。
     var observationTick = 0
+    /// 最近一轮因密钥、网络或设备错误失败；成功一轮后清除。
+    var faulted = false
     /// 每次调整在硬件回读后换新值，驱动 AI 标注。
     var adjustmentID: UUID?
     /// 调整成功后通知模型，用于标记参数由 AI 设定。
@@ -40,6 +42,7 @@ final class CameraAgent {
 
     func enable(capture: CaptureSession, key: String) {
         isEnabled = true
+        faulted = false
         round = 0
         previous = nil
         captureArmed = true
@@ -183,6 +186,7 @@ final class CameraAgent {
                     }
                 }
                 failures = 0
+                faulted = false
                 isBusy = false
                 // A single task owns the entire loop: no overlapping API requests.
                 try await Task.sleep(for: .seconds(5))
@@ -193,6 +197,7 @@ final class CameraAgent {
                 resetReadiness()
                 if case AIError.authentication = error {
                     stop()
+                    faulted = true
                     status = "AI 需要检查密钥"
                     reason = error.localizedDescription
                     break
@@ -202,6 +207,7 @@ final class CameraAgent {
                     reason = "上一轮建议已丢弃，没有改变相机参数。"
                 } else {
                     failures = min(failures + 1, 6)
+                    faulted = true
                     status = "AI 暂时无法调整"
                     reason = error.localizedDescription
                 }

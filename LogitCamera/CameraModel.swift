@@ -29,7 +29,8 @@ final class CameraModel {
     var showsPhoto = false
     var showsInfo = false
     var showsControls = false
-    var showsAISettings = false
+    var showsSettings = false
+    var showsAgentDetail = false
     var hasAPIKey = false
     private var apiKey: String?
     private var foreground = false
@@ -91,7 +92,7 @@ final class CameraModel {
 
     func toggleAI() {
         if agent.isEnabled { agent.stop(); return }
-        guard let apiKey else { showsAISettings = true; return }
+        guard let apiKey else { showsSettings = true; return }
         guard state.canCapture, !isSaving else { post("相机就绪后即可开启 AI。"); return }
         notice = nil
         agent.enable(capture: capture, key: apiKey)
