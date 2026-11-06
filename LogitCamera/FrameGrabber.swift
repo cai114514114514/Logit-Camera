@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import CoreImage
 import ImageIO
+import CameraCore
 
 struct CameraFrame: Sendable {
     let jpeg: Data
@@ -8,13 +9,7 @@ struct CameraFrame: Sendable {
     let signature: [UInt8]
 
     func difference(from other: CameraFrame) -> Double {
-        guard signature.count == other.signature.count, !signature.isEmpty else { return 1 }
-        let count = Double(signature.count)
-        let mean = signature.reduce(0) { $0 + Double($1) } / count
-        let otherMean = other.signature.reduce(0) { $0 + Double($1) } / count
-        return zip(signature, other.signature).reduce(0) {
-            $0 + abs((Double($1.0) - mean) - (Double($1.1) - otherMean))
-        } / count / 255
+        MeasurementMath.sceneChange(signature, other.signature)
     }
 }
 
@@ -35,7 +30,15 @@ final class FrameGrabber: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         lock.unlock()
     }
 
-    func snapshot() throws -> CameraFrame {
+    /// 最新的取景缓冲及其时间（感知层使用）。超过 2 秒的旧帧视为无效。
+    func latestBuffer() -> (CVPixelBuffer, TimeInterval)? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let buffer, ProcessInfo.processInfo.systemUptime - timestamp < 2 else { return nil }
+        return (buffer, timestamp)
+    }
+
+    func snapshot(maxDimension: CGFloat = 768) throws -> CameraFrame {
         lock.lock()
         let current = buffer
         let capturedAt = timestamp
@@ -44,7 +47,7 @@ final class FrameGrabber: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             throw AIError.message("等待新的取景画面。")
         }
         let image = CIImage(cvPixelBuffer: current)
-        let scale = min(1, 768 / max(image.extent.width, image.extent.height))
+        let scale = min(1, maxDimension / max(image.extent.width, image.extent.height))
         let reduced = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         guard let jpeg = context.jpegRepresentation(
             of: reduced, colorSpace: CGColorSpaceCreateDeviceRGB(),
