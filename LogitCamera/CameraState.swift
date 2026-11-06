@@ -16,6 +16,8 @@ struct CameraState: Sendable {
     var selectedShutter: Double?
     var ratio: FrameRatio = .standard
     var zoom: Float = 1
+    var minZoom: Float = 1
+    var maxZoom: Float = 1
     var aperture: Float?
     var iso: Float?
     var exposureSeconds: Double?
@@ -79,5 +81,17 @@ enum CameraText {
         guard let seconds, seconds.isFinite, seconds > 0 else { return "—" }
         if seconds >= 1 { return seconds.formatted(.number.precision(.fractionLength(0...1))) + "s" }
         return "1/" + String(Int((1 / seconds).rounded()))
+    }
+
+    static func bias(_ value: Float) -> String {
+        guard value.isFinite else { return "—" }
+        let rounded = (value * 10).rounded() / 10
+        if rounded == 0 { return "±0.0" }
+        return String(format: "%+.1f", rounded)
+    }
+
+    static func zoom(_ value: Float) -> String {
+        guard value.isFinite, value > 0 else { return "—" }
+        return value.formatted(.number.precision(.fractionLength(0...1))) + "×"
     }
 }

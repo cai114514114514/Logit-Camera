@@ -81,7 +81,7 @@ extension CaptureSession {
                     self.state.selectedISO = settings.iso
                     self.state.selectedShutter = settings.shutterSeconds
                     self.state.ratio = settings.ratio
-                    device.videoZoomFactor = CGFloat(settings.zoom)
+                    device.ramp(toVideoZoomFactor: CGFloat(settings.zoom), withRate: Self.zoomRampRate)
                     device.setExposureTargetBias(Float(settings.exposureBias), completionHandler: nil)
                     self.publish()
                     if automatic {
@@ -108,6 +108,7 @@ extension CaptureSession {
                             self.state.phase = .unavailable
                             self.needsExposureReset = true
                             self.state.message = "硬件调整超时，请重新连接相机以恢复自动曝光。"
+                            self.stopMetering()
                             self.readExposure()
                             self.finishAgentApplication(.failure(AIError.message("硬件调整超时，将重新观察实际状态。")))
                         }

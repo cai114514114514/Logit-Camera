@@ -1,7 +1,32 @@
 @preconcurrency import AVFoundation
+import CameraCore
 import Foundation
 
 extension CaptureSession {
+    /// 每秒变化 2^8 倍以内：1× → 3× 约 0.2 秒，平滑而不拖沓。
+    static let zoomRampRate: Float = 8
+
+    /// `animated` 用于档位切换；双指缩放逐帧直接设置以保持跟手。
+    func setZoom(_ factor: Double, animated: Bool) {
+        queue.async {
+            guard self.state.canCapture, let device = self.device else { return }
+            let target = CGFloat(ZoomStops.clamp(factor, min: Double(device.minAvailableVideoZoomFactor),
+                                                 max: min(3, Double(device.maxAvailableVideoZoomFactor))))
+            do {
+                try device.lockForConfiguration()
+                defer { device.unlockForConfiguration() }
+                if animated {
+                    device.ramp(toVideoZoomFactor: target, withRate: Self.zoomRampRate)
+                } else {
+                    device.cancelVideoZoomRamp()
+                    device.videoZoomFactor = target
+                }
+                self.state.zoom = Float(target)
+                self.publish()
+            } catch { self.onEvent?(.error(error.localizedDescription)) }
+        }
+    }
+
     func setAperture(_ aperture: Float?) {
         queue.async {
             guard self.state.canCapture, let device = self.device else { return }
@@ -83,7 +108,11 @@ extension CaptureSession {
                 }
                 if device.isExposurePointOfInterestSupported {
                     device.exposurePointOfInterest = point
-                    try self.applyExposureLocked(self.state.selectedAperture, to: device)
+                    // 手动 ISO 或快门（通常由 AI 设定）保持不变，只移动测光点；
+                    // 自动或光圈优先时重新应用曝光模式，使新的测光点生效。
+                    if self.state.selectedISO == nil && self.state.selectedShutter == nil {
+                        try self.applyExposureLocked(self.state.selectedAperture, to: device)
+                    }
                 }
             } catch { self.onEvent?(.error(error.localizedDescription)) }
         }

@@ -44,7 +44,7 @@ struct PhotoDetailView: View {
                         }
                     }.buttonStyle(.bordered)
                     if let notice = model.notice {
-                        Text(notice).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Text(notice.text).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
                     if model.hasUnprotectedPhoto && !model.isSaving {
                         Button("丢弃这张未保存的照片", role: .destructive) { confirmsDiscard = true }

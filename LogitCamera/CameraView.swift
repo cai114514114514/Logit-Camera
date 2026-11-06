@@ -156,7 +156,7 @@ struct CameraView: View {
     private var shutterDock: some View {
         VStack(spacing: 10) {
             if let notice = model.notice {
-                Text(notice)
+                Text(notice.text)
                     .font(.footnote)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 14)

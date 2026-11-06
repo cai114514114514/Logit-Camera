@@ -6,18 +6,11 @@ enum AgentStage: String, Sendable {
     case observing, thinking, applying, verifying, ready, countdown, paused
 }
 
-struct AgentParameterChange: Identifiable {
-    let id: String
-    let title: String
-    let before: String
-    let after: String
-}
-
 @MainActor @Observable
 final class CameraAgent {
     var isEnabled = false
     var isBusy = false
-    var status = "DeepSeek 待命"
+    var status = "AI 待命"
     var reason = ""
     var round = 0
     var stage: AgentStage = .paused
@@ -25,7 +18,15 @@ final class CameraAgent {
     var autoCaptureEnabled = true
     var captureArmed = true
     var confirmationCount = 0
-    var changes: [AgentParameterChange] = []
+    var changes: [ParameterDelta] = []
+    /// 每次真正截取一帧准备发给模型时自增，驱动取景扫描线。
+    var observationTick = 0
+    /// 每次调整在硬件回读后换新值，驱动 AI 标注。
+    var adjustmentID: UUID?
+    /// 调整成功后通知模型，用于标记参数由 AI 设定。
+    @ObservationIgnored var onAdjusted: (() -> Void)?
+    /// 演示模式下禁止启动真实循环。
+    @ObservationIgnored var demoLocked = false
     @ObservationIgnored var onAutoCapture: (() -> Bool)?
     @ObservationIgnored private var readiness = CaptureReadiness()
     @ObservationIgnored private var confirmedFrame: CameraFrame?
@@ -47,7 +48,7 @@ final class CameraAgent {
     }
 
     func resume(capture: CaptureSession, key: String) {
-        guard isEnabled, task == nil else { return }
+        guard isEnabled, task == nil, !demoLocked else { return }
         let token = UUID()
         generation = token
         self.capture = capture
@@ -73,7 +74,7 @@ final class CameraAgent {
     func stop() {
         isEnabled = false
         pause()
-        status = "DeepSeek 待命"
+        status = "AI 待命"
         reason = ""
     }
 
@@ -81,7 +82,7 @@ final class CameraAgent {
         autoCaptureEnabled = enabled
         countdown = nil
         countdownAttempt = nil
-        stage = .observing
+        if isEnabled { stage = .observing }
         resetReadiness()
     }
 
@@ -117,7 +118,8 @@ final class CameraAgent {
                 stage = .observing
                 let observation = try await capture.observation()
                 try checkCurrent(token)
-                status = "DeepSeek 分析中"
+                observationTick += 1
+                status = "AI 分析中"
                 stage = .thinking
                 let reply = try await client.decide(observation: observation, previous: previous, key: key)
                 try checkCurrent(token)
@@ -145,6 +147,8 @@ final class CameraAgent {
                             try checkCurrent(token)
                             previous = AgentExchange(call: reply.call, outcome: feedback("已执行", observation: result))
                             changes = parameterChanges(from: fresh.context, to: result.context)
+                            adjustmentID = UUID()
+                            onAdjusted?()
                             AgentTrace.record(round: round, age: age, difference: 0, action: "adjust",
                                               outcome: "applied", requested: settings, actual: result.context.actual)
                             status = "已调整 · 等待复核"
@@ -262,14 +266,15 @@ final class CameraAgent {
         isCurrent(token) && countdownAttempt == attempt && autoCaptureEnabled && captureArmed
     }
 
-    private func parameterChanges(from before: ObservationContext, to after: ObservationContext) -> [AgentParameterChange] {
-        [
-            AgentParameterChange(id: "aperture", title: "光圈", before: CameraText.aperture(Float(before.actual.aperture)), after: CameraText.aperture(Float(after.actual.aperture))),
-            AgentParameterChange(id: "iso", title: "ISO", before: String(Int(before.actual.iso)), after: String(Int(after.actual.iso))),
-            AgentParameterChange(id: "shutter", title: "快门", before: CameraText.shutter(before.actual.shutterSeconds), after: CameraText.shutter(after.actual.shutterSeconds)),
-            AgentParameterChange(id: "ratio", title: "画幅", before: before.settings.ratio.rawValue, after: after.settings.ratio.rawValue),
-            AgentParameterChange(id: "zoom", title: "变焦", before: String(format: "%.1f×", before.actual.zoom), after: String(format: "%.1f×", after.actual.zoom))
-        ]
+    private func parameterChanges(from before: ObservationContext, to after: ObservationContext) -> [ParameterDelta] {
+        ParameterDelta.changed([
+            ParameterDelta(id: "aperture", title: "光圈", before: CameraText.aperture(Float(before.actual.aperture)), after: CameraText.aperture(Float(after.actual.aperture))),
+            ParameterDelta(id: "iso", title: "ISO", before: String(Int(before.actual.iso)), after: String(Int(after.actual.iso))),
+            ParameterDelta(id: "shutter", title: "快门", before: CameraText.shutter(before.actual.shutterSeconds), after: CameraText.shutter(after.actual.shutterSeconds)),
+            ParameterDelta(id: "bias", title: "曝光", before: CameraText.bias(Float(before.actual.exposureBias)), after: CameraText.bias(Float(after.actual.exposureBias))),
+            ParameterDelta(id: "ratio", title: "画幅", before: before.settings.ratio.rawValue, after: after.settings.ratio.rawValue),
+            ParameterDelta(id: "zoom", title: "变焦", before: CameraText.zoom(Float(before.actual.zoom)), after: CameraText.zoom(Float(after.actual.zoom)))
+        ])
     }
 
     private func feedback(_ outcome: String, observation: CameraObservation) -> String {

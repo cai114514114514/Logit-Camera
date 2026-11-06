@@ -1,3 +1,4 @@
+import CameraCore
 import SwiftUI
 
 struct CameraAgentPanel: View {
@@ -132,7 +133,7 @@ struct CameraAgentPanel: View {
         return index == activeStep ? "circle.fill" : "circle"
     }
 
-    private func parameterChange(_ change: AgentParameterChange) -> some View {
+    private func parameterChange(_ change: ParameterDelta) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(change.title)
                 .font(.system(size: 9, weight: .medium))

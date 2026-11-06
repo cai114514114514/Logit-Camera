@@ -21,13 +21,7 @@ enum PhotoFraming {
             throw CameraFailure.capture
         }
         // Normalize orientation after cropping; preserve capture exposure metadata.
-        metadata[kCGImagePropertyOrientation as String] = 1
-        metadata[kCGImagePropertyPixelWidth as String] = cropped.width
-        metadata[kCGImagePropertyPixelHeight as String] = cropped.height
-        var exif = metadata[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
-        exif[kCGImagePropertyExifPixelXDimension as String] = cropped.width
-        exif[kCGImagePropertyExifPixelYDimension as String] = cropped.height
-        metadata[kCGImagePropertyExifDictionary as String] = exif
+        metadata = PhotoMetadata.normalized(metadata, width: cropped.width, height: cropped.height)
         metadata[kCGImageDestinationLossyCompressionQuality as String] = 0.96
         let result = NSMutableData()
         guard let writer = CGImageDestinationCreateWithData(result, UTType.jpeg.identifier as CFString, 1, nil) else {

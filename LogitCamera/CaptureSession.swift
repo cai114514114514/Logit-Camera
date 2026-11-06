@@ -159,6 +159,8 @@ final class CaptureSession: NSObject, @unchecked Sendable {
                 duration: AVCaptureDevice.autoExposureDuration,
                 iso: AVCaptureDevice.autoISO
             )
+        state.minZoom = Float(camera.minAvailableVideoZoomFactor)
+        state.maxZoom = Float(min(3, camera.maxAvailableVideoZoomFactor))
         state.minimumBias = max(-2, camera.minExposureTargetBias)
         state.maximumBias = min(2, camera.maxExposureTargetBias)
         configured = true
@@ -168,6 +170,11 @@ final class CaptureSession: NSObject, @unchecked Sendable {
         state.phase = .denied
         state.message = "允许相机访问后，即可取景和调节光圈。"
         publish()
+    }
+
+    func stopMetering() {
+        timer?.cancel()
+        timer = nil
     }
 
     private func startMetering() {
