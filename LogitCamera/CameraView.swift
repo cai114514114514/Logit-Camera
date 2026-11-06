@@ -1,40 +1,47 @@
 import SwiftUI
 import CameraCore
 
+/// 主界面只负责布局：HUD ｜ 取景 ｜ 浮动层（提示、AI 标注、变焦或拨盘）｜ 固定控制区。
 struct CameraView: View {
     @State private var model = CameraModel()
+    @State private var dialOpen = false
+    @State private var controlsHeight: CGFloat = 150
+    @State private var pinchBase: Double?
     @Environment(\.scenePhase) private var scenePhase
+
+    private var agent: CameraAgent { model.agent }
 
     var body: some View {
         GeometryReader { geometry in
             let size = previewSize(in: geometry.size)
-            // Keep the normal frame above the shutter. Tall frames continue
-            // beneath floating controls without changing their aspect ratio.
-            let previewTop = max(0, (geometry.size.height - 132 - size.height) / 2)
+            let top = previewTop(size: size, height: geometry.size.height)
 
             ZStack(alignment: .top) {
-                Color.black.ignoresSafeArea()
+                Theme.Palette.background.ignoresSafeArea()
 
                 viewfinder
                     .frame(width: size.width, height: size.height)
-                    .position(x: geometry.size.width / 2, y: previewTop + size.height / 2)
+                    .position(x: geometry.size.width / 2, y: top + size.height / 2)
 
                 VStack(spacing: 0) {
-                    topToolbar
-                    if model.agent.isEnabled || !model.agent.reason.isEmpty {
-                        CameraAgentPanel(model: model)
-                            .padding(.horizontal, 14)
-                            .padding(.top, 8)
-                    }
+                    HUDReadoutBar(model: model, dialOpen: $dialOpen)
+                        .background {
+                            LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
+                                .ignoresSafeArea(edges: .top)
+                                .allowsHitTesting(false)
+                        }
                     Spacer(minLength: 0)
-                    shutterDock
+                    floatingLayer
+                    fixedControls
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { controlsHeight = $0 }
                 }
             }
         }
-        .background(.black)
-        .foregroundStyle(.white)
-        .tint(.yellow)
+        .background(Theme.Palette.background)
+        .foregroundStyle(Theme.Palette.ink)
+        .tint(Theme.Palette.accent)
         .preferredColorScheme(.dark)
+        .statusBarHidden()
         .task { model.activate() }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -45,10 +52,11 @@ struct CameraView: View {
             }
         }
         .sheet(isPresented: $model.showsPhoto) { PhotoDetailView(model: model) }
-        .sheet(isPresented: $model.showsInfo) { CameraInfoView(state: model.state) }
-        .sheet(isPresented: $model.showsControls) { CameraControlsSheet(model: model) }
-        .sheet(isPresented: $model.showsSettings) { AISettingsView(model: model) }
+        .sheet(isPresented: $model.showsSettings) { SettingsView(model: model) }
+        .sheet(isPresented: $model.showsAgentDetail) { AIDetailSheet(model: model) }
     }
+
+    // MARK: Layout
 
     private func previewSize(in available: CGSize) -> CGSize {
         let ratio = CGFloat(model.state.ratio.widthToHeight)
@@ -56,131 +64,142 @@ struct CameraView: View {
         return CGSize(width: width, height: width / ratio)
     }
 
-    private var topToolbar: some View {
-        HStack(spacing: 8) {
-            CameraToolButton(symbol: "camera.aperture", label: "相机能力与使用说明") {
-                model.showsInfo = true
-            }
-            Spacer(minLength: 8)
-            ratioMenu
-            Spacer(minLength: 8)
-            CameraToolButton(symbol: "slider.horizontal.3", label: "手动相机控制") {
-                model.showsControls = true
-            }
-            .accessibilityIdentifier("camera.controls")
-            CameraToolButton(symbol: "gearshape", label: "DeepSeek 设置") {
-                model.showsSettings = true
-            }
-            .accessibilityIdentifier("camera.aiSettings")
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 6)
+    /// 能放进 HUD 与固定控制区之间就居中；放不下时贴着 HUD；
+    /// 更高的画幅（9:16）在整屏内居中，延伸到控制区下方但不改变比例。
+    private func previewTop(size: CGSize, height: CGFloat) -> CGFloat {
+        let hud = Theme.Metric.hudHeight
+        let region = height - hud - controlsHeight
+        if size.height <= region { return hud + (region - size.height) / 2 }
+        if size.height <= height - hud { return hud }
+        return max(0, (height - size.height) / 2)
     }
 
-    private var ratioMenu: some View {
-        Menu {
-            Section(model.agent.isEnabled ? "DeepSeek 正在自动选择画幅" : "照片画幅") {
-                ForEach(FrameRatio.allCases) { ratio in
-                    Button {
-                        model.setRatio(ratio)
-                    } label: {
-                        if model.state.ratio == ratio {
-                            Label(ratio.rawValue, systemImage: "checkmark")
-                        } else {
-                            Text(ratio.rawValue)
-                        }
-                    }
-                    .accessibilityIdentifier("ratio.\(ratio.rawValue)")
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text(model.state.ratio.rawValue)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
-            }
-            .foregroundStyle(model.agent.isEnabled ? .yellow : .white)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 44)
-            .background(.black.opacity(0.6), in: Capsule())
-        }
-        .accessibilityLabel("照片画幅")
-        .accessibilityValue(model.state.ratio.rawValue)
-        .accessibilityIdentifier("camera.ratio")
-    }
+    // MARK: Viewfinder
 
     private var viewfinder: some View {
-        CameraPreview(session: model.capture.session, onFocus: model.focus)
+        CameraPreview(session: model.capture.session,
+                      onFocus: focus,
+                      markerColor: agent.isEnabled ? UIColor(Theme.Palette.accent) : .white)
             .background(.black)
+            .overlay {
+                ViewfinderFrame(aiActive: agent.isEnabled && agent.stage != .paused,
+                                scanTick: agent.observationTick)
+            }
             .overlay {
                 if model.state.phase != .ready { statusOverlay }
             }
-            .overlay {
-                if model.agent.stage == .countdown, let countdown = model.agent.countdown {
-                    CameraCaptureCountdown(countdown: countdown, onCancel: model.cancelAutoCapture)
-                        .offset(y: 44)
-                }
-            }
             .clipped()
+            .gesture(pinch)
             .accessibilityIdentifier("camera.preview")
+    }
+
+    private func focus(_ point: CGPoint) {
+        if dialOpen {
+            withAnimation(.snappy(duration: 0.25)) { dialOpen = false }
+        } else {
+            model.focus(at: point)
+        }
+    }
+
+    private var pinch: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let base = pinchBase ?? Double(model.state.zoom)
+                pinchBase = base
+                model.setZoom(base * value.magnification, animated: false)
+            }
+            .onEnded { _ in pinchBase = nil }
     }
 
     private var statusOverlay: some View {
         VStack(spacing: 18) {
             if model.state.phase == .starting {
-                ProgressView()
+                ProgressView().tint(Theme.Palette.inkSecondary)
             } else {
                 Image(systemName: model.state.phase == .denied ? "camera.badge.ellipsis" : "camera")
-                    .font(.system(size: 34, weight: .light))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 30, weight: .ultraLight))
+                    .foregroundStyle(Theme.Palette.inkSecondary)
             }
             Text(model.state.message)
                 .font(.subheadline)
+                .foregroundStyle(Theme.Palette.ink)
                 .multilineTextAlignment(.center)
             if model.state.phase == .denied {
-                Button("打开系统设置", action: openSettings)
-                    .buttonStyle(.borderedProminent)
-                    .frame(minHeight: 44)
+                outlineButton("打开系统设置", action: openSettings)
             } else if model.state.phase == .unavailable || model.state.phase == .interrupted {
-                Button("重新连接相机") { model.activate() }
-                    .buttonStyle(.bordered)
-                    .frame(minHeight: 44)
+                outlineButton("重新连接相机") { model.activate() }
             }
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.black.opacity(0.8))
+        .background(.black.opacity(0.85))
     }
 
-    private var shutterDock: some View {
+    private func outlineButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.Palette.accent)
+                .padding(.horizontal, 20)
+                .frame(minHeight: 44)
+                .overlay(Capsule().stroke(Theme.Palette.accentDim, lineWidth: 1))
+        }
+    }
+
+    // MARK: Controls
+
+    /// 浮在取景画面下沿：提示、AI 标注，以及变焦（拨盘展开时换成拨盘）。不参与取景定位。
+    private var floatingLayer: some View {
         VStack(spacing: 10) {
             if let notice = model.notice {
-                Text(notice.text)
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
-                    .accessibilityAddTraits(.updatesFrequently)
+                Toast(text: notice.text, isWarning: notice.isWarning,
+                      action: notice.offersResume ? ToastAction(title: "恢复 AI", run: resumeAI) : nil)
+                    .transition(.opacity.combined(with: .offset(y: 6)))
             }
+            AIAnnotation(agent: agent)
+                .padding(.horizontal, Theme.Metric.gutter)
+            if dialOpen {
+                ManualDial(model: model)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                ZoomSelector(model: model)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.bottom, 6)
+        .animation(.snappy(duration: 0.25), value: model.notice)
+        .animation(.snappy(duration: 0.25), value: dialOpen)
+    }
 
-            CameraExposureReadout(state: model.state)
+    private func resumeAI() {
+        model.notice = nil
+        model.toggleAI()
+    }
+
+    /// 固定高度：状态线槽位始终保留，开关 AI 时取景不跳动。
+    private var fixedControls: some View {
+        VStack(spacing: 2) {
+            ZStack {
+                if agent.isEnabled || agent.faulted {
+                    AIStatusLine(agent: agent) { model.showsAgentDetail = true }
+                        .transition(.opacity)
+                }
+            }
+            .frame(height: 44)
+            .animation(.easeOut(duration: 0.2), value: agent.isEnabled)
 
             HStack(spacing: 0) {
                 photoButton.frame(maxWidth: .infinity)
-                shutterButton.frame(maxWidth: .infinity)
-                CameraAgentButton(agent: model.agent, action: model.toggleAI)
-                    .frame(maxWidth: .infinity)
+                ShutterButton(model: model)
+                AIButton(isOn: agent.isEnabled, stage: agent.stage, action: model.toggleAI)
                     .disabled(model.state.phase != .ready || model.isSaving || model.capturePending)
+                    .frame(maxWidth: .infinity)
             }
+            .padding(.horizontal, Theme.Metric.gutter)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 20)
-        .padding(.bottom, 12)
+        .padding(.bottom, 10)
         .background {
-            LinearGradient(colors: [.clear, .black.opacity(0.8), .black],
-                           startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [.clear, .black.opacity(0.85), .black], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea(edges: .bottom)
                 .allowsHitTesting(false)
         }
@@ -192,34 +211,21 @@ struct CameraView: View {
                 if let thumbnail = model.thumbnail {
                     Image(uiImage: thumbnail).resizable().scaledToFill()
                 } else {
-                    Image(systemName: "photo").font(.system(size: 22)).foregroundStyle(.secondary)
+                    Image(systemName: "photo").font(.system(size: 17, weight: .light))
+                        .foregroundStyle(Theme.Palette.inkTertiary)
                 }
             }
-            .frame(width: 52, height: 52)
-            .background(.white.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.15), lineWidth: 1))
+            .frame(width: 44, height: 44)
+            .background(.white.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.Palette.hairline, lineWidth: 1))
+            .frame(width: 56, height: 56)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .disabled(model.latestPhoto == nil)
         .accessibilityLabel("查看刚拍摄的照片")
         .accessibilityIdentifier("camera.photo")
-    }
-
-    private var shutterButton: some View {
-        Button(action: model.takePhoto) {
-            ZStack {
-                Circle().stroke(.white.opacity(0.9), lineWidth: 3).frame(width: 78, height: 78)
-                Circle().fill(.white).frame(width: 64, height: 64)
-                if model.capturePending || model.state.isCapturing || model.isSaving {
-                    ProgressView().tint(.black)
-                }
-            }
-        }
-        .disabled(!model.canTakePhoto)
-        .opacity(model.canTakePhoto ? 1 : 0.4)
-        .accessibilityLabel("拍照并保存")
-        .accessibilityIdentifier("camera.shutter")
-        .sensoryFeedback(.impact(weight: .medium), trigger: model.state.isCapturing)
     }
 
     private func openSettings() {

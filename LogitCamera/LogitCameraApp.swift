@@ -6,7 +6,7 @@ struct LogitCameraApp: App {
         WindowGroup {
             CameraView()
                 .preferredColorScheme(.dark)
-                .tint(.yellow)
+                .tint(Theme.Palette.accent)
         }
     }
 }

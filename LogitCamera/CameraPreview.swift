@@ -4,21 +4,27 @@ import SwiftUI
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     let onFocus: (CGPoint) -> Void
+    var markerColor: UIColor = .white
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
         view.onFocus = onFocus
+        view.markerColor = markerColor
         return view
     }
 
-    func updateUIView(_ view: PreviewView, context: Context) { view.onFocus = onFocus }
+    func updateUIView(_ view: PreviewView, context: Context) {
+        view.onFocus = onFocus
+        view.markerColor = markerColor
+    }
 
     final class PreviewView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
         var onFocus: ((CGPoint) -> Void)?
+        var markerColor: UIColor = .white
 
         init() {
             super.init(frame: .zero)
@@ -43,9 +49,9 @@ struct CameraPreview: UIViewRepresentable {
             onFocus?(previewLayer.captureDevicePointConverted(fromLayerPoint: location))
             let marker = UIView(frame: CGRect(x: location.x - 24, y: location.y - 24, width: 48, height: 48))
             marker.isUserInteractionEnabled = false
-            marker.layer.borderWidth = 1.5
-            marker.layer.borderColor = UIColor.systemYellow.cgColor
-            marker.layer.cornerRadius = 8
+            marker.layer.borderWidth = 1
+            marker.layer.borderColor = markerColor.cgColor
+            marker.layer.cornerRadius = 0
             addSubview(marker)
             UIView.animate(withDuration: 0.3, delay: 0.7, animations: { marker.alpha = 0 }) { _ in
                 marker.removeFromSuperview()

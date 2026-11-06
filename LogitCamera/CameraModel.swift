@@ -27,8 +27,6 @@ final class CameraModel {
     /// 当前手动参数是否由 AI 设定。用户任何接管都会清除。
     var agentOwnsSettings = false
     var showsPhoto = false
-    var showsInfo = false
-    var showsControls = false
     var showsSettings = false
     var showsAgentDetail = false
     var hasAPIKey = false
