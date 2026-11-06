@@ -160,6 +160,7 @@ final class CaptureSession: NSObject, @unchecked Sendable {
                 iso: AVCaptureDevice.autoISO
             )
         state.minZoom = Float(camera.minAvailableVideoZoomFactor)
+        state.minISO = camera.activeFormat.minISO
         state.maxZoom = Float(min(3, camera.maxAvailableVideoZoomFactor))
         state.minimumBias = max(-2, camera.minExposureTargetBias)
         state.maximumBias = min(2, camera.maxExposureTargetBias)

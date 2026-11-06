@@ -40,7 +40,7 @@ extension CaptureSession {
 
     /// Caller holds the configuration lock and runs on the capture queue.
     /// Reapply after a metering-point change to make the new point effective.
-    private func applyExposureLocked(_ aperture: Float?, to device: AVCaptureDevice) throws {
+    func applyExposureLocked(_ aperture: Float?, to device: AVCaptureDevice) throws {
         if let aperture {
             guard state.supportsAperturePriority,
                   state.apertureRange?.contains(aperture) == true,

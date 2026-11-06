@@ -17,6 +17,7 @@ struct CameraState: Sendable {
     var ratio: FrameRatio = .standard
     var zoom: Float = 1
     var minZoom: Float = 1
+    var minISO: Float = 50
     var maxZoom: Float = 1
     var aperture: Float?
     var iso: Float?
