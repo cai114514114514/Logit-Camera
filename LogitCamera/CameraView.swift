@@ -42,7 +42,12 @@ struct CameraView: View {
         .tint(Theme.Palette.accent)
         .preferredColorScheme(.dark)
         .statusBarHidden()
-        .task { model.activate() }
+        .task {
+            model.activate()
+            #if DEBUG
+            if DemoScenario.current == .manual { dialOpen = true }
+            #endif
+        }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active: model.activate()

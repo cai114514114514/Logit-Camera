@@ -34,6 +34,7 @@ final class CameraModel {
     private var foreground = false
     private var automaticCapturePending = false
     private var lastPhase: CameraPhase = .starting
+    @ObservationIgnored private var demoApplied = false
 
     var hasUnprotectedPhoto: Bool {
         latestPhoto != nil && !photoSaved && archivedURL == nil
@@ -55,6 +56,12 @@ final class CameraModel {
         foreground = true
         refreshAIConfiguration()
         capture.start()
+        #if DEBUG
+        if !demoApplied, let demo = DemoScenario.current {
+            demoApplied = true
+            applyDemo(demo)
+        }
+        #endif
     }
 
     func deactivate() {

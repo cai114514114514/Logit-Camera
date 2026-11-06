@@ -46,7 +46,10 @@ final class CompositionTests: XCTestCase {
         screenshot.lifetime = .keepAlways
         add(screenshot)
         XCTAssertEqual(outcome, .completed, app.debugDescription)
-        XCTAssertTrue(app.buttons["camera.rearm"].exists)
+        // 「再拍一张」位于 AI 详情面板中。
+        app.descendants(matching: .any)["camera.agent"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["camera.rearm"].waitForExistence(timeout: 5))
+        app.buttons["完成"].tap()
         if button.isEnabled && button.isSelected { button.tap() }
         photo.tap()
         XCTAssertTrue(app.staticTexts["photo.dimensions"].waitForExistence(timeout: 10))
@@ -62,8 +65,13 @@ final class CompositionTests: XCTestCase {
         expectation(for: NSPredicate { _, _ in button.isEnabled }, evaluatedWith: nil)
         waitForExpectations(timeout: 10)
         button.tap()
+        // 自动拍摄开关位于 AI 详情面板中。
+        let status = app.descendants(matching: .any)["camera.agent"].firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        status.tap()
         let autoCapture = app.switches["camera.autoCapture"]
         if autoCapture.waitForExistence(timeout: 5), autoCapture.value as? String == "1" { autoCapture.tap() }
+        app.buttons["完成"].tap()
         let readout = app.descendants(matching: .any)["camera.agent"].firstMatch
         let completed = NSPredicate { _, _ in
             guard readout.exists else { return false }
