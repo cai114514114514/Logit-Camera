@@ -6,9 +6,12 @@ final class PhotoCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
     private var result: Result<CapturedPhoto, Error> = .failure(CameraFailure.capture)
     private let completion: @Sendable (Result<CapturedPhoto, Error>) -> Void
     private let ratio: FrameRatio
+    private let crop: CameraCore.NormalizedRect?
 
-    init(ratio: FrameRatio, completion: @escaping @Sendable (Result<CapturedPhoto, Error>) -> Void) {
+    init(ratio: FrameRatio, crop: CameraCore.NormalizedRect? = nil,
+         completion: @escaping @Sendable (Result<CapturedPhoto, Error>) -> Void) {
         self.ratio = ratio
+        self.crop = crop
         self.completion = completion
     }
 
@@ -17,7 +20,7 @@ final class PhotoCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
         if let error { result = .failure(error); return }
         guard let original = photo.fileDataRepresentation() else { return }
         let data: Data
-        do { data = try PhotoFraming.crop(original, to: ratio) }
+        do { data = try PhotoFraming.crop(original, to: ratio, rect: crop) }
         catch { result = .failure(error); return }
         // EXIF belongs to the captured photo; the live device may have moved on.
         let exif = photo.metadata[kCGImagePropertyExifDictionary as String] as? [String: Any]
@@ -37,7 +40,8 @@ final class PhotoCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
 }
 
 extension CaptureSession {
-    func capture() {
+    /// - Parameter crop: AI 方案的裁切框（拍摄瞬间冻结）；为空时按画幅居中裁切。
+    func capture(crop: CameraCore.NormalizedRect? = nil) {
         queue.async {
             guard self.state.canCapture else {
                 self.onEvent?(.captureRejected)
@@ -53,7 +57,7 @@ extension CaptureSession {
                 connection.videoRotationAngle = 90
             }
             let identifier = settings.uniqueID
-            let processor = PhotoCapture(ratio: self.state.ratio) { [weak self = self] result in
+            let processor = PhotoCapture(ratio: self.state.ratio, crop: crop) { [weak self = self] result in
                 guard let self else { return }
                 self.queue.async {
                     self.processors[identifier] = nil

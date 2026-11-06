@@ -42,7 +42,7 @@ public enum FrameRatio: String, CaseIterable, Codable, Sendable, Identifiable {
         )
     }
 
-    private var components: (width: Int, height: Int) {
+    var components: (width: Int, height: Int) {
         switch self {
         case .standard: (3, 4)
         case .tall: (9, 16)
