@@ -1,0 +1,108 @@
+{
+  "id": "night",
+  "name": "夜景弱光",
+  "cues": {
+    "labels": [
+      "night",
+      "city lights",
+      "neon",
+      "fireworks",
+      "dark"
+    ],
+    "subjects": [
+      "none",
+      "salient"
+    ],
+    "measurements": [
+      "平均亮度低，ISO 高或快门慢"
+    ]
+  },
+  "principles": {
+    "composition": [
+      "让灯光成为主体或引导线：招牌、车灯轨迹、窗户",
+      "保留一部分暗部，夜景不需要被照亮成白天",
+      "有水面时利用倒影加倍灯光"
+    ],
+    "light": [
+      "蓝调时刻（日落后约 20–40 分钟）天空仍有颜色，是夜景最佳时机",
+      "混合色温（暖色灯与冷色天空）形成对比",
+      "避开直射镜头的强光源造成的眩光"
+    ],
+    "exposure": [
+      "以亮部为基准，主体曝光略低（-0.3 EV），保留夜晚氛围",
+      "灯光本身允许少量溢出（≤ 2%），但大面积发光招牌要有细节",
+      "手持时手机必须非常稳定；ISO 不超过 3200"
+    ],
+    "timing": [
+      "等手机完全稳定后再拍",
+      "等车流、行人带来光点或剪影时",
+      "雨后地面有反光时，灯光会被加倍"
+    ],
+    "faults": [
+      "手抖导致整体模糊",
+      "过度提亮让夜景失去氛围、噪点严重",
+      "灯光大面积溢出成白块",
+      "强光眩光"
+    ]
+  },
+  "rubricWeights": {
+    "clarity": 0.25,
+    "exposure": 0.25,
+    "composition": 0.15,
+    "light": 0.15,
+    "background": 0.05,
+    "moment": 0.05,
+    "genre": 0.1
+  },
+  "genreCriterion": {
+    "name": "夜晚氛围",
+    "low": "噪点或模糊严重，看不出夜晚的美",
+    "mid": "清楚但缺乏氛围",
+    "high": "光与暗的平衡保留了夜晚的情绪"
+  },
+  "defaultPlan": {
+    "genre": "night",
+    "genreConfidence": 1.0,
+    "subject": "none",
+    "composition": {
+      "ratio": "3:4",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "subjectSize": {
+        "min": 0.3,
+        "max": 0.6
+      },
+      "minCropArea": 0.25,
+      "levelHorizon": false
+    },
+    "exposure": {
+      "meter": "highlights",
+      "subjectEV": -0.3,
+      "highlightClipMax": 0.02,
+      "aperture": {
+        "mode": "auto"
+      },
+      "isoCeiling": 3200
+    },
+    "triggers": [
+      {
+        "kind": "subjectSharp",
+        "threshold": 0.3
+      },
+      {
+        "kind": "deviceStill",
+        "threshold": 0.05
+      },
+      {
+        "kind": "exposureSettled"
+      }
+    ],
+    "holdMs": 400,
+    "rationale": "夜景默认：保住灯光，手机静止后拍"
+  },
+  "spaqCategories": [
+    "night scene"
+  ]
+}

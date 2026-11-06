@@ -1,0 +1,124 @@
+{
+  "id": "landscape",
+  "name": "风光",
+  "cues": {
+    "labels": [
+      "landscape",
+      "mountain",
+      "sea",
+      "beach",
+      "sky",
+      "lake",
+      "field",
+      "forest",
+      "sunset"
+    ],
+    "subjects": [
+      "none",
+      "salient"
+    ],
+    "measurements": [
+      "检测到地平线，无主导人脸，画面上部亮度高"
+    ]
+  },
+  "principles": {
+    "composition": [
+      "地平线放在上三分或下三分线，不要切在正中间；天空精彩就多给天空，地面精彩就多给地面",
+      "地平线必须水平（误差 ≤ 1°）",
+      "前景（石头、花、栏杆）+ 中景 + 远景三层让画面有纵深",
+      "利用道路、河流、海岸线作为引导线把视线带入画面",
+      "画面一角的大片空白天空或纯色地面要有理由"
+    ],
+    "light": [
+      "日出后与日落前一小时的低角度暖光最好",
+      "侧光能拉出山体与地面的纹理和层次",
+      "正午平光下风景显得平淡，优先找云影、逆光或局部光",
+      "阴天适合拍森林、溪流等需要柔和细节的场景"
+    ],
+    "exposure": [
+      "以高光为基准，天空不能大面积溢出",
+      "暗部允许偏暗，但主体景物要有细节",
+      "ISO 尽量低（≤ 400），保证画质",
+      "光圈适中（或自动）以获得前后都清晰的景深"
+    ],
+    "timing": [
+      "等云影或光束落在关键景物上",
+      "水面平静时拍倒影，有风浪时拍动势",
+      "天空颜色最浓的几分钟"
+    ],
+    "faults": [
+      "地平线歪斜",
+      "天空一片死白",
+      "没有前景导致画面扁平",
+      "地平线正好平分画面且两半都平淡"
+    ]
+  },
+  "rubricWeights": {
+    "clarity": 0.1,
+    "exposure": 0.2,
+    "composition": 0.25,
+    "light": 0.25,
+    "background": 0.05,
+    "moment": 0.05,
+    "genre": 0.1
+  },
+  "genreCriterion": {
+    "name": "层次与氛围",
+    "low": "平淡、缺乏纵深和氛围",
+    "mid": "有层次但光线普通",
+    "high": "前中远景层次清楚，光线与天气营造出强烈氛围"
+  },
+  "defaultPlan": {
+    "genre": "landscape",
+    "genreConfidence": 1.0,
+    "subject": "none",
+    "composition": {
+      "ratio": "3:4",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "subjectSize": {
+        "min": 0.3,
+        "max": 0.6
+      },
+      "minCropArea": 0.25,
+      "levelHorizon": true
+    },
+    "exposure": {
+      "meter": "highlights",
+      "subjectEV": 0.0,
+      "highlightClipMax": 0.005,
+      "aperture": {
+        "mode": "auto"
+      },
+      "isoCeiling": 400
+    },
+    "triggers": [
+      {
+        "kind": "subjectSharp",
+        "threshold": 0.4
+      },
+      {
+        "kind": "horizonLevel",
+        "threshold": 1
+      },
+      {
+        "kind": "deviceStill",
+        "threshold": 0.1
+      },
+      {
+        "kind": "highlightsSafe",
+        "threshold": 0.005
+      },
+      {
+        "kind": "exposureSettled"
+      }
+    ],
+    "holdMs": 300,
+    "rationale": "风光默认：地平线水平，保住天空"
+  },
+  "spaqCategories": [
+    "landscape"
+  ]
+}

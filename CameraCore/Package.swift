@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.iOS("27.0"), .macOS("26.0")],
     products: [.library(name: "CameraCore", targets: ["CameraCore"])],
     targets: [
-        .target(name: "CameraCore"),
+        .target(name: "CameraCore", resources: [.copy("Resources/Knowledge")]),
         .testTarget(name: "CameraCoreTests", dependencies: ["CameraCore"])
     ]
 )

@@ -1,0 +1,121 @@
+{
+  "id": "architecture",
+  "name": "建筑与室内",
+  "cues": {
+    "labels": [
+      "building",
+      "architecture",
+      "interior",
+      "room",
+      "bridge",
+      "tower",
+      "church"
+    ],
+    "subjects": [
+      "none",
+      "salient"
+    ],
+    "measurements": [
+      "大量直线与几何结构"
+    ]
+  },
+  "principles": {
+    "composition": [
+      "竖线保持竖直，手机不要仰拍或俯拍过度；水平线保持水平",
+      "对称建筑就用严格对称，非对称时用三分法",
+      "寻找重复的窗、柱、楼梯形成节奏",
+      "室内拍摄让画面边缘干净，避免半截家具",
+      "留出建筑周围的环境，让观者理解尺度"
+    ],
+    "light": [
+      "侧光让立面的凹凸和材质显现",
+      "室内优先用窗光，避免顶灯造成的杂乱阴影",
+      "蓝调时刻室内外亮度接近，最适合拍亮灯的建筑"
+    ],
+    "exposure": [
+      "室内窗户不要大面积溢出，宁可室内略暗",
+      "ISO ≤ 800，保持线条锐利",
+      "光圈适中或自动以保证整体清晰"
+    ],
+    "timing": [
+      "等行人离开或走到合适的位置作为尺度参照",
+      "等光线扫过立面的那一刻",
+      "天空有云或颜色时，比纯白天空更能衬托建筑"
+    ],
+    "faults": [
+      "竖线明显倾斜（梯形畸变）",
+      "画面边缘有被切断的杂物",
+      "窗户死白",
+      "对称构图却不居中"
+    ]
+  },
+  "rubricWeights": {
+    "clarity": 0.15,
+    "exposure": 0.15,
+    "composition": 0.3,
+    "light": 0.15,
+    "background": 0.1,
+    "moment": 0.0,
+    "genre": 0.15
+  },
+  "genreCriterion": {
+    "name": "几何与秩序",
+    "low": "线条杂乱、透视歪斜",
+    "mid": "线条规整但缺乏节奏",
+    "high": "几何、对称或重复形成强烈秩序感"
+  },
+  "defaultPlan": {
+    "genre": "architecture",
+    "genreConfidence": 1.0,
+    "subject": "none",
+    "composition": {
+      "ratio": "3:4",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "subjectSize": {
+        "min": 0.3,
+        "max": 0.6
+      },
+      "minCropArea": 0.25,
+      "levelHorizon": true
+    },
+    "exposure": {
+      "meter": "scene",
+      "subjectEV": 0.0,
+      "highlightClipMax": 0.01,
+      "aperture": {
+        "mode": "auto"
+      },
+      "isoCeiling": 800
+    },
+    "triggers": [
+      {
+        "kind": "subjectSharp",
+        "threshold": 0.5
+      },
+      {
+        "kind": "horizonLevel",
+        "threshold": 1
+      },
+      {
+        "kind": "deviceStill",
+        "threshold": 0.1
+      },
+      {
+        "kind": "highlightsSafe",
+        "threshold": 0.01
+      },
+      {
+        "kind": "exposureSettled"
+      }
+    ],
+    "holdMs": 300,
+    "rationale": "建筑默认：线条横平竖直，整体清晰"
+  },
+  "spaqCategories": [
+    "cityscape",
+    "indoor scene"
+  ]
+}

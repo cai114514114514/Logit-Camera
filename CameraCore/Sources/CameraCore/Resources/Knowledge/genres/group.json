@@ -1,0 +1,121 @@
+{
+  "id": "group",
+  "name": "合影",
+  "cues": {
+    "labels": [
+      "people",
+      "group",
+      "crowd",
+      "team"
+    ],
+    "subjects": [
+      "face",
+      "body"
+    ],
+    "measurements": [
+      "画面中有 3 张以上人脸"
+    ]
+  },
+  "principles": {
+    "composition": [
+      "所有人完整入画，边缘的人不要被裁切",
+      "人群整体居中或略低，头顶留出适度空间",
+      "人脸大小尽量接近，前后排错开避免互相遮挡",
+      "画面四周留出约 5% 的余量，后期还能微调"
+    ],
+    "light": [
+      "均匀的光线比戏剧性的光更重要，避免一半人在阴影里",
+      "避免强逆光导致所有人脸发暗",
+      "阴天或阴影下拍合影最稳妥"
+    ],
+    "exposure": [
+      "以人脸整体亮度测光",
+      "适当收小光圈（或保持自动）让前后排都清晰",
+      "快门不低于 1/160 s，人多时总有人在动"
+    ],
+    "timing": [
+      "等所有人都睁眼、看向镜头",
+      "笑容最自然的时刻往往在开拍后一两秒",
+      "避免有人正在说话或转头"
+    ],
+    "faults": [
+      "有人闭眼或被挡住",
+      "边缘的人被裁掉半个身体",
+      "前排清晰后排模糊",
+      "背景有路人穿过"
+    ]
+  },
+  "rubricWeights": {
+    "clarity": 0.15,
+    "exposure": 0.15,
+    "composition": 0.15,
+    "light": 0.1,
+    "background": 0.05,
+    "moment": 0.3,
+    "genre": 0.1
+  },
+  "genreCriterion": {
+    "name": "全员状态",
+    "low": "有人闭眼、被挡或不在状态",
+    "mid": "全员入画、状态尚可",
+    "high": "每个人都神情自然、整体气氛统一"
+  },
+  "defaultPlan": {
+    "genre": "group",
+    "genreConfidence": 1.0,
+    "subject": "face",
+    "composition": {
+      "ratio": "3:4",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "subjectSize": {
+        "min": 0.05,
+        "max": 0.1
+      },
+      "minCropArea": 0.25,
+      "levelHorizon": false
+    },
+    "exposure": {
+      "meter": "subject",
+      "subjectEV": 0.4,
+      "highlightClipMax": 0.01,
+      "aperture": {
+        "mode": "auto"
+      },
+      "shutterFloor": 0.00625,
+      "isoCeiling": 3200
+    },
+    "triggers": [
+      {
+        "kind": "subjectSharp",
+        "threshold": 0.45
+      },
+      {
+        "kind": "eyesOpen",
+        "threshold": 0.6
+      },
+      {
+        "kind": "faceToward",
+        "threshold": 30
+      },
+      {
+        "kind": "deviceStill",
+        "threshold": 0.12
+      },
+      {
+        "kind": "highlightsSafe",
+        "threshold": 0.01
+      },
+      {
+        "kind": "exposureSettled"
+      }
+    ],
+    "holdMs": 250,
+    "rationale": "合影默认：全员入画、均匀曝光"
+  },
+  "spaqCategories": [
+    "human"
+  ]
+}

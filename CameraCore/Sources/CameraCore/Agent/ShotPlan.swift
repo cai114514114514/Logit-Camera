@@ -186,6 +186,26 @@ public struct ShotPlan: Codable, Sendable, Equatable {
         self.look = look
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, genre, genreConfidence, subject, composition, exposure, triggers, holdMs, rationale, intentWeights, look
+    }
+
+    /// 知识库默认方案与模型输出不带 id / holdMs：缺省时生成新 id、取 200 ms。
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        genre = try c.decode(GenreID.self, forKey: .genre)
+        genreConfidence = try c.decode(Double.self, forKey: .genreConfidence)
+        subject = try c.decode(SubjectKind.self, forKey: .subject)
+        composition = try c.decode(Composition.self, forKey: .composition)
+        exposure = try c.decode(ExposureIntent.self, forKey: .exposure)
+        triggers = try c.decode([Trigger].self, forKey: .triggers)
+        holdMs = try c.decodeIfPresent(Int.self, forKey: .holdMs) ?? 200
+        rationale = try c.decode(String.self, forKey: .rationale)
+        intentWeights = try c.decodeIfPresent([String: Double].self, forKey: .intentWeights)
+        look = try c.decodeIfPresent(String.self, forKey: .look)
+    }
+
     public func validate(against limits: CameraLimits) throws {
         try check(genreConfidence, in: 0...1, "genreConfidence")
         try check(composition.anchor.x, in: 0...1, "anchor")

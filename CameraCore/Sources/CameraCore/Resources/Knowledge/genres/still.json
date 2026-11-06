@@ -1,0 +1,121 @@
+{
+  "id": "still",
+  "name": "静物与产品",
+  "cues": {
+    "labels": [
+      "object",
+      "product",
+      "flower",
+      "plant",
+      "toy",
+      "watch",
+      "bottle",
+      "book"
+    ],
+    "subjects": [
+      "salient"
+    ],
+    "measurements": [
+      "单一主体、背景简单、近距离"
+    ]
+  },
+  "principles": {
+    "composition": [
+      "主体完整、居中或放在三分点，周围留出呼吸空间",
+      "背景越简单越好：纯色墙面、桌面、天空",
+      "斜放的线条比完全平行于边框更有活力",
+      "多个物体按奇数组合、有高低错落"
+    ],
+    "light": [
+      "一侧主光加另一侧反光，表现体积感",
+      "透明或反光材质用逆光或侧逆光勾出轮廓",
+      "避免顶光造成的扁平和杂乱反射"
+    ],
+    "exposure": [
+      "高光细节最重要，反光处溢出 ≤ 0.5%",
+      "对焦在产品的标识或最重要的细节上",
+      "手持时快门不低于 1/60 s 或保持手机稳定"
+    ],
+    "timing": [
+      "画面中没有多余的手、影子和杂物时",
+      "花朵等植物等风停下来",
+      "反光恰好勾出轮廓、而不是遮住细节时"
+    ],
+    "faults": [
+      "背景杂乱",
+      "反光处死白",
+      "主体边缘被裁切",
+      "颜色与实物明显不符"
+    ]
+  },
+  "rubricWeights": {
+    "clarity": 0.2,
+    "exposure": 0.15,
+    "composition": 0.2,
+    "light": 0.2,
+    "background": 0.1,
+    "moment": 0.0,
+    "genre": 0.15
+  },
+  "genreCriterion": {
+    "name": "质感表现",
+    "low": "材质看不清或失真",
+    "mid": "清楚但平淡",
+    "high": "材质、形体与细节被光线精确地表现出来"
+  },
+  "defaultPlan": {
+    "genre": "still",
+    "genreConfidence": 1.0,
+    "subject": "salient",
+    "composition": {
+      "ratio": "3:4",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "subjectSize": {
+        "min": 0.45,
+        "max": 0.7
+      },
+      "minCropArea": 0.25,
+      "levelHorizon": false
+    },
+    "exposure": {
+      "meter": "subject",
+      "subjectEV": 0.2,
+      "highlightClipMax": 0.005,
+      "aperture": {
+        "mode": "auto"
+      },
+      "shutterFloor": 0.016666666666666666,
+      "isoCeiling": 1600
+    },
+    "triggers": [
+      {
+        "kind": "subjectSharp",
+        "threshold": 0.6
+      },
+      {
+        "kind": "deviceStill",
+        "threshold": 0.08
+      },
+      {
+        "kind": "subjectPlaced",
+        "threshold": 0.08
+      },
+      {
+        "kind": "highlightsSafe",
+        "threshold": 0.005
+      },
+      {
+        "kind": "exposureSettled"
+      }
+    ],
+    "holdMs": 250,
+    "rationale": "静物默认：主体居中留白，保住高光细节"
+  },
+  "spaqCategories": [
+    "still life",
+    "plant"
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "id": "street",
+  "name": "街拍人文",
+  "cues": {
+    "labels": [
+      "street",
+      "city",
+      "road",
+      "crowd",
+      "shop"
+    ],
+    "subjects": [
+      "body",
+      "face"
+    ],
+    "measurements": [
+      "有行走或活动的人物，主体速度较高"
+    ]
+  },
+  "principles": {
+    "composition": [
+      "人物朝向或行进方向留出空间（引导空间）",
+      "利用门框、窗、阴影、街道线条做框架或引导线",
+      "主体与背景要有关系：一个人和一面招牌、一束光、一种对比",
+      "人物不必很大，环境本身是故事的一部分",
+      "画面边缘干净，没有被切掉一半的路人"
+    ],
+    "light": [
+      "寻找光影对比：斜射的阳光、强烈的阴影、窗口的光",
+      "侧逆光让人物轮廓从背景中跳出来",
+      "阴天适合拍色彩与细节，晴天适合拍光影几何"
+    ],
+    "exposure": [
+      "高光优先：宁可阴影深，也不要让亮部溢出",
+      "快门不低于 1/250 s 冻结行人",
+      "光圈适中，保证主体和关键环境都清楚"
+    ],
+    "timing": [
+      "等人物走进光里或走到框架中",
+      "捕捉步态的最高点、手势、视线交汇这类「决定性瞬间」",
+      "人物之间、人物与环境出现呼应时按下快门"
+    ],
+    "faults": [
+      "主体被路人遮挡",
+      "人物恰好在两束光之间的暗处",
+      "画面没有中心，看不出拍的是什么",
+      "地平线或建筑明显歪斜"
+    ]
+  },
+  "rubricWeights": {
+    "clarity": 0.1,
+    "exposure": 0.1,
+    "composition": 0.2,
+    "light": 0.15,
+    "background": 0.1,
+    "moment": 0.25,
+    "genre": 0.1
+  },
+  "genreCriterion": {
+    "name": "故事性",
+    "low": "只是记录了一个路人",
+    "mid": "有主体有环境但关系平淡",
+    "high": "人物与环境、光影形成耐看的叙事或几何"
+  },
+  "defaultPlan": {
+    "genre": "street",
+    "genreConfidence": 1.0,
+    "subject": "body",
+    "composition": {
+      "ratio": "3:4",
+      "anchor": {
+        "x": 0.62,
+        "y": 0.55
+      },
+      "subjectSize": {
+        "min": 0.3,
+        "max": 0.6
+      },
+      "minCropArea": 0.25,
+      "levelHorizon": false
+    },
+    "exposure": {
+      "meter": "highlights",
+      "subjectEV": 0.0,
+      "highlightClipMax": 0.02,
+      "aperture": {
+        "mode": "auto"
+      },
+      "shutterFloor": 0.004,
+      "isoCeiling": 3200
+    },
+    "triggers": [
+      {
+        "kind": "subjectSharp",
+        "threshold": 0.45
+      },
+      {
+        "kind": "deviceStill",
+        "threshold": 0.2
+      },
+      {
+        "kind": "subjectPlaced",
+        "threshold": 0.12
+      },
+      {
+        "kind": "highlightsSafe",
+        "threshold": 0.02
+      }
+    ],
+    "holdMs": 100,
+    "rationale": "街拍默认：行进方向留空间、冻结动作"
+  },
+  "spaqCategories": [
+    "human",
+    "cityscape"
+  ]
+}

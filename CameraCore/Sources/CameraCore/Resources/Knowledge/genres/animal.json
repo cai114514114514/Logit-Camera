@@ -1,0 +1,113 @@
+{
+  "id": "animal",
+  "name": "宠物与动物",
+  "cues": {
+    "labels": [
+      "dog",
+      "cat",
+      "pet",
+      "animal",
+      "bird"
+    ],
+    "subjects": [
+      "salient"
+    ],
+    "measurements": [
+      "非人类主体，可能快速移动"
+    ]
+  },
+  "principles": {
+    "composition": [
+      "降到动物视线高度，眼睛放在上三分线附近",
+      "动物朝向或运动方向留出空间",
+      "背景简单，避免与毛色相近的背景"
+    ],
+    "light": [
+      "柔和的侧光表现毛发质感",
+      "避免黑色毛发在逆光下完全变成剪影，除非有意为之",
+      "眼睛里的反光让动物更有神"
+    ],
+    "exposure": [
+      "以动物身体测光；黑色毛发适当减曝光，白色毛发防止溢出",
+      "快门不低于 1/250 s，动物随时会动",
+      "对焦在眼睛上"
+    ],
+    "timing": [
+      "动物看向镜头或看向画面内某物时",
+      "耳朵竖起、动作停顿的一瞬",
+      "打哈欠、跳跃这类特别的动作"
+    ],
+    "faults": [
+      "眼睛不清楚",
+      "身体被画面边缘切断",
+      "动作模糊",
+      "从人的站立高度俯拍导致画面平淡"
+    ]
+  },
+  "rubricWeights": {
+    "clarity": 0.2,
+    "exposure": 0.1,
+    "composition": 0.15,
+    "light": 0.1,
+    "background": 0.1,
+    "moment": 0.25,
+    "genre": 0.1
+  },
+  "genreCriterion": {
+    "name": "个性与神态",
+    "low": "神态呆滞或看不清",
+    "mid": "清楚但普通",
+    "high": "抓住了动物的个性、眼神或趣味瞬间"
+  },
+  "defaultPlan": {
+    "genre": "animal",
+    "genreConfidence": 1.0,
+    "subject": "salient",
+    "composition": {
+      "ratio": "3:4",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.42
+      },
+      "subjectSize": {
+        "min": 0.4,
+        "max": 0.7
+      },
+      "minCropArea": 0.25,
+      "levelHorizon": false
+    },
+    "exposure": {
+      "meter": "subject",
+      "subjectEV": 0.0,
+      "highlightClipMax": 0.01,
+      "aperture": {
+        "mode": "auto"
+      },
+      "shutterFloor": 0.004,
+      "isoCeiling": 3200
+    },
+    "triggers": [
+      {
+        "kind": "subjectSharp",
+        "threshold": 0.5
+      },
+      {
+        "kind": "deviceStill",
+        "threshold": 0.2
+      },
+      {
+        "kind": "subjectPlaced",
+        "threshold": 0.12
+      },
+      {
+        "kind": "highlightsSafe",
+        "threshold": 0.01
+      }
+    ],
+    "holdMs": 100,
+    "rationale": "动物默认：高快门冻结动作，眼睛在上三分"
+  },
+  "spaqCategories": [
+    "animal"
+  ]
+}

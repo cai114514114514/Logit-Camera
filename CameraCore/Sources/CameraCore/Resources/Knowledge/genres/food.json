@@ -1,0 +1,117 @@
+{
+  "id": "food",
+  "name": "美食",
+  "cues": {
+    "labels": [
+      "food",
+      "dish",
+      "meal",
+      "dessert",
+      "drink",
+      "plate",
+      "coffee"
+    ],
+    "subjects": [
+      "salient"
+    ],
+    "measurements": [
+      "近距离、主体占画面大部分、暖色调"
+    ]
+  },
+  "principles": {
+    "composition": [
+      "主菜占画面 50–75%，可以大胆裁掉盘子边缘",
+      "平铺俯拍适合一桌菜和平面构成；45° 斜拍适合有高度的食物（汉堡、蛋糕、饮品）",
+      "用餐具、配料、餐巾做辅助元素，但不要喧宾夺主",
+      "方形画幅常常最适合美食"
+    ],
+    "light": [
+      "侧逆光最能表现质感、油光与热气",
+      "窗边自然光优于室内顶灯；避免闪光灯直射",
+      "暖色光让食物更有食欲，避免偏绿或偏蓝"
+    ],
+    "exposure": [
+      "主体比中灰略亮（+0.3 EV 左右），但白色盘子与奶油不能溢出",
+      "对焦在最诱人的部位（切面、酱汁、最前沿）",
+      "快门不低于 1/60 s，手持近拍更容易抖"
+    ],
+    "timing": [
+      "刚上桌、热气还在、酱汁还亮的时候",
+      "倒酱、切开、拉丝这类动作瞬间",
+      "在餐具和手入画之前先拍一张干净的"
+    ],
+    "faults": [
+      "顶灯造成的油腻反光",
+      "背景杂乱（纸巾、手机、杂物）",
+      "颜色偏冷，看起来不新鲜",
+      "焦点落在盘子边缘"
+    ]
+  },
+  "rubricWeights": {
+    "clarity": 0.2,
+    "exposure": 0.15,
+    "composition": 0.15,
+    "light": 0.2,
+    "background": 0.1,
+    "moment": 0.0,
+    "genre": 0.2
+  },
+  "genreCriterion": {
+    "name": "食欲感",
+    "low": "看起来不好吃（偏色、油腻、杂乱）",
+    "mid": "清楚但缺乏质感",
+    "high": "质感、色泽和光线让人想立刻吃"
+  },
+  "defaultPlan": {
+    "genre": "food",
+    "genreConfidence": 1.0,
+    "subject": "salient",
+    "composition": {
+      "ratio": "1:1",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.55
+      },
+      "subjectSize": {
+        "min": 0.5,
+        "max": 0.75
+      },
+      "minCropArea": 0.25,
+      "levelHorizon": false
+    },
+    "exposure": {
+      "meter": "subject",
+      "subjectEV": 0.3,
+      "highlightClipMax": 0.01,
+      "aperture": {
+        "mode": "auto"
+      },
+      "shutterFloor": 0.016666666666666666,
+      "isoCeiling": 1600
+    },
+    "triggers": [
+      {
+        "kind": "subjectSharp",
+        "threshold": 0.55
+      },
+      {
+        "kind": "deviceStill",
+        "threshold": 0.1
+      },
+      {
+        "kind": "subjectPlaced",
+        "threshold": 0.1
+      },
+      {
+        "kind": "highlightsSafe",
+        "threshold": 0.01
+      },
+      {
+        "kind": "exposureSettled"
+      }
+    ],
+    "holdMs": 200,
+    "rationale": "美食默认：方形构图，主体饱满，保住白盘高光"
+  },
+  "spaqCategories": []
+}

@@ -1,0 +1,111 @@
+{
+  "id": "document",
+  "name": "文档与实用",
+  "cues": {
+    "labels": [
+      "document",
+      "paper",
+      "text",
+      "receipt",
+      "screen",
+      "whiteboard",
+      "menu"
+    ],
+    "subjects": [
+      "none"
+    ],
+    "measurements": [
+      "系统判定为实用照片（isUtility），画面中有大量文字"
+    ]
+  },
+  "principles": {
+    "composition": [
+      "文档充满画面且四边都在画面内",
+      "手机与纸面尽量平行",
+      "不需要美学构图，只追求完整与可读"
+    ],
+    "light": [
+      "均匀照明，避免手机或手的影子落在纸上",
+      "避免反光遮挡文字",
+      "光线不足时保持手机稳定而不是强行提亮"
+    ],
+    "exposure": [
+      "白纸接近白但不溢出，文字黑而清晰",
+      "对焦在文字上",
+      "快门优先保证不抖"
+    ],
+    "timing": [
+      "手机稳定、没有手指进入画面时立即拍",
+      "纸面平整、没有卷边时",
+      "光线均匀、没有移动的阴影时"
+    ],
+    "faults": [
+      "文字模糊",
+      "反光或阴影挡住内容",
+      "边角被裁掉"
+    ]
+  },
+  "rubricWeights": {
+    "clarity": 0.6,
+    "exposure": 0.4,
+    "composition": 0,
+    "light": 0,
+    "background": 0,
+    "moment": 0,
+    "genre": 0
+  },
+  "genreCriterion": {
+    "name": "可读性",
+    "low": "关键内容无法辨认",
+    "mid": "大部分可读",
+    "high": "全部内容清晰、完整、无反光"
+  },
+  "defaultPlan": {
+    "genre": "document",
+    "genreConfidence": 1.0,
+    "subject": "none",
+    "composition": {
+      "ratio": "3:4",
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "subjectSize": {
+        "min": 0.3,
+        "max": 0.6
+      },
+      "minCropArea": 0.25,
+      "levelHorizon": false
+    },
+    "exposure": {
+      "meter": "scene",
+      "subjectEV": 0.5,
+      "highlightClipMax": 0.02,
+      "aperture": {
+        "mode": "auto"
+      },
+      "shutterFloor": 0.016666666666666666,
+      "isoCeiling": 1600
+    },
+    "triggers": [
+      {
+        "kind": "subjectSharp",
+        "threshold": 0.6
+      },
+      {
+        "kind": "deviceStill",
+        "threshold": 0.08
+      },
+      {
+        "kind": "highlightsSafe",
+        "threshold": 0.02
+      },
+      {
+        "kind": "exposureSettled"
+      }
+    ],
+    "holdMs": 200,
+    "rationale": "实用照片：只追求清晰完整"
+  },
+  "spaqCategories": []
+}
