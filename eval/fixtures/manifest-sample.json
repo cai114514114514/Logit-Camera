@@ -1,0 +1,17 @@
+{
+  "dataset" : "spaq",
+  "items" : [
+    {
+      "category" : "human",
+      "expectedGenres" : ["portrait", "group", "street"],
+      "file" : "00001.jpg",
+      "humanScore" : 72.5
+    },
+    {
+      "category" : "landscape",
+      "expectedGenres" : ["landscape"],
+      "file" : "00002.jpg",
+      "humanScore" : 31.0
+    }
+  ]
+}

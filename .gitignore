@@ -15,3 +15,5 @@ __pycache__/
 *.xcresult/
 *.p12
 *.mobileprovision
+eval/results/
+eval/images/

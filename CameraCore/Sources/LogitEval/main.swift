@@ -1,8 +1,10 @@
 import CameraCore
 import Foundation
 
-/// Logit Camera 离线工具。
+/// Logit Camera 离线工具（说明见 eval/README.md）。
 ///   probe <image>   用真实 API 依次调用 scout、judge（新方案）、judge（带记忆复核），打印结果与延迟。
+///   bench           快档测量算法的耗时（请用 -c release）。
+///   sample / run    生成评测清单 / 运行离线评测。
 let arguments = Array(CommandLine.arguments.dropFirst())
 
 func elapsed(_ start: ContinuousClock.Instant) -> String {
@@ -78,9 +80,17 @@ func bench() {
 do {
     switch arguments.first {
     case "bench": bench()
+    case "sample": try sample(Options(arguments.dropFirst()))
+    case "run": try await run(Options(arguments.dropFirst()))
     case "probe" where arguments.count == 2: try await probe(arguments[1])
     default:
-        print("用法：LogitEval probe <image> | bench")
+        print("""
+    用法：
+      LogitEval probe <image>
+      LogitEval bench
+      LogitEval sample --labels <labels.csv> --out <manifest.json> [--per-category 20] [--dataset spaq]
+      LogitEval run --manifest <manifest.json> --images <dir> [--limit N] [--out results.json]
+    """)
         exit(2)
     }
 } catch {
