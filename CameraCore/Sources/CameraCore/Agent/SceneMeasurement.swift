@@ -110,6 +110,26 @@ public struct AestheticsHint: Codable, Sendable, Equatable {
     }
 }
 
+/// 帧的色度统计（YCbCr，取值 −0.5…0.5）：用于判断偏色、画面是否平淡，以及上方是否有天空。
+public struct ChromaStats: Codable, Sendable, Equatable {
+    /// 中间调像素的平均 Cb / Cr。
+    public var cb: Double
+    public var cr: Double
+    /// 平均色度幅值。
+    public var saturation: Double
+    /// 画面上方 30% 的平均亮度（0…1）与平均 Cb。
+    public var topLuma: Double
+    public var topCb: Double
+
+    public init(cb: Double, cr: Double, saturation: Double, topLuma: Double, topCb: Double) {
+        self.cb = cb
+        self.cr = cr
+        self.saturation = saturation
+        self.topLuma = topLuma
+        self.topCb = topCb
+    }
+}
+
 /// 本地感知层的一次客观测量。
 public struct SceneMeasurement: Codable, Sendable, Equatable {
     public var timestamp: TimeInterval
@@ -122,11 +142,12 @@ public struct SceneMeasurement: Codable, Sendable, Equatable {
     public var subjectSpeed: Double
     public var sceneChange: Double
     public var aesthetics: AestheticsHint?
+    public var chroma: ChromaStats?
 
     public init(timestamp: TimeInterval, subjects: [Subject], primarySubjectID: Int?,
                 luminance: LuminanceStats, sharpness: Sharpness, horizonDegrees: Double?,
                 deviceAngularSpeed: Double, subjectSpeed: Double, sceneChange: Double,
-                aesthetics: AestheticsHint?) {
+                aesthetics: AestheticsHint?, chroma: ChromaStats? = nil) {
         self.timestamp = timestamp
         self.subjects = subjects
         self.primarySubjectID = primarySubjectID
@@ -137,6 +158,7 @@ public struct SceneMeasurement: Codable, Sendable, Equatable {
         self.subjectSpeed = subjectSpeed
         self.sceneChange = sceneChange
         self.aesthetics = aesthetics
+        self.chroma = chroma
     }
 
     public var primarySubject: Subject? {

@@ -16,6 +16,32 @@ public struct LumaImage: Sendable {
 
 /// 感知层中可单元测试的纯计算。
 public enum MeasurementMath {
+    /// 色度统计。`cb`、`cr`、`luma` 是同一网格（width × height）上的采样，0…255。
+    public static func chroma(cb: [UInt8], cr: [UInt8], luma: [UInt8], width: Int, height: Int) -> ChromaStats {
+        let count = min(cb.count, cr.count, luma.count, width * height)
+        guard count > 0, width > 0, height > 0 else { return ChromaStats(cb: 0, cr: 0, saturation: 0, topLuma: 0, topCb: 0) }
+        var sumCb = 0.0, sumCr = 0.0, mid = 0.0, sat = 0.0
+        var topLuma = 0.0, topCb = 0.0, top = 0.0
+        let topRows = max(1, Int(Double(height) * 0.3))
+        for i in 0..<count {
+            let y = Double(luma[i]) / 255
+            let b = (Double(cb[i]) - 128) / 255, r = (Double(cr[i]) - 128) / 255
+            sat += (b * b + r * r).squareRoot()
+            if y > 0.2 && y < 0.8 {
+                sumCb += b
+                sumCr += r
+                mid += 1
+            }
+            if i / width < topRows {
+                topLuma += y
+                topCb += b
+                top += 1
+            }
+        }
+        return ChromaStats(cb: mid > 0 ? sumCb / mid : 0, cr: mid > 0 ? sumCr / mid : 0, saturation: sat / Double(count),
+                           topLuma: top > 0 ? topLuma / top : 0, topCb: top > 0 ? topCb / top : 0)
+    }
+
     public static let clipHighLevel: UInt8 = 250
     public static let clipLowLevel: UInt8 = 5
 

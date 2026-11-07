@@ -16,11 +16,13 @@ public struct CaptionSnapshot: Sendable, Equatable {
     public var starved: Bool
     /// 最近一次选片完成的时间（同一时间只算一次）。
     public var pickedAt: TimeInterval?
+    /// AI 修正此刻最显著的一项（例如「压了压天空」）。
+    public var correctionNote: String?
 
     public init(phase: AgentPhase, isOffline: Bool = false, genre: GenreID? = nil, genreName: String? = nil,
                 isDefaultPlan: Bool = true, planID: UUID? = nil, rationale: String? = nil, lens: LensStop? = nil,
                 depth: DepthIntent? = nil, waitingFor: Trigger.Kind? = nil, starved: Bool = false,
-                pickedAt: TimeInterval? = nil) {
+                pickedAt: TimeInterval? = nil, correctionNote: String? = nil) {
         self.phase = phase
         self.isOffline = isOffline
         self.genre = genre
@@ -33,6 +35,7 @@ public struct CaptionSnapshot: Sendable, Equatable {
         self.waitingFor = waitingFor
         self.starved = starved
         self.pickedAt = pickedAt
+        self.correctionNote = correctionNote
     }
 }
 
@@ -80,6 +83,9 @@ public struct CaptionDirector: Sendable {
             candidates.append((60, "像是\(name)"))
         }
         if s.starved, before?.starved != true { candidates.append((50, "光线有点暗，拿稳一点")) }
+        if let note = s.correctionNote, note != before?.correctionNote, [.planning, .composing].contains(s.phase) {
+            candidates.append((45, note))
+        }
         if s.isOffline, before?.isOffline != true { candidates.append((50, "没有网络，先按经验拍")) }
         if let kind = s.waitingFor, [.planning, .composing].contains(s.phase) {
             if waiting?.kind != kind { waiting = (kind, now) }

@@ -147,6 +147,10 @@ public enum LookOp: Sendable, Equatable {
     case vignette(amount: Double, midpoint: Double)
     case mono(red: Double, green: Double, blue: Double)
     case bloom(Double)
+    /// 以 (x, y)（左上原点）为中心的柔和径向补光；radius 相对短边，amount 单位 EV。
+    case subjectLight(x: Double, y: Double, radius: Double, amount: Double)
+    /// 天空恢复：压暗画面上方偏蓝偏亮的区域并略加饱和；horizon 为天空下沿（0…1，左上原点）。
+    case skyRecover(amount: Double, horizon: Double)
     case custom(CustomShader)
 
     public var name: String {
@@ -165,6 +169,8 @@ public enum LookOp: Sendable, Equatable {
         case .vignette: "vignette"
         case .mono: "mono"
         case .bloom: "bloom"
+        case .subjectLight: "subjectLight"
+        case .skyRecover: "skyRecover"
         case .custom: "custom"
         }
     }
@@ -174,6 +180,7 @@ extension LookOp: Codable {
     private enum Keys: String, CodingKey {
         case op, ev, temperature, tint, amount, points, name, body, params
         case highlights, shadows, midtones, balance, bands, size, midpoint, red, green, blue
+        case x, y, radius, horizon
     }
 
     public init(from decoder: Decoder) throws {
@@ -205,6 +212,13 @@ extension LookOp: Codable {
                          green: try c.decodeIfPresent(Double.self, forKey: .green) ?? 0.59,
                          blue: try c.decodeIfPresent(Double.self, forKey: .blue) ?? 0.11)
         case "bloom": self = .bloom(try c.decode(Double.self, forKey: .amount))
+        case "subjectLight":
+            self = .subjectLight(x: try c.decode(Double.self, forKey: .x), y: try c.decode(Double.self, forKey: .y),
+                                 radius: try c.decodeIfPresent(Double.self, forKey: .radius) ?? 0.3,
+                                 amount: try c.decode(Double.self, forKey: .amount))
+        case "skyRecover":
+            self = .skyRecover(amount: try c.decode(Double.self, forKey: .amount),
+                               horizon: try c.decodeIfPresent(Double.self, forKey: .horizon) ?? 0.45)
         case "custom":
             self = .custom(CustomShader(name: try c.decodeIfPresent(String.self, forKey: .name) ?? "自定义",
                                         body: try c.decode(String.self, forKey: .body),
@@ -244,6 +258,14 @@ extension LookOp: Codable {
             try c.encode(green, forKey: .green)
             try c.encode(blue, forKey: .blue)
         case .bloom(let amount): try c.encode(amount, forKey: .amount)
+        case .subjectLight(let x, let y, let radius, let amount):
+            try c.encode(x, forKey: .x)
+            try c.encode(y, forKey: .y)
+            try c.encode(radius, forKey: .radius)
+            try c.encode(amount, forKey: .amount)
+        case .skyRecover(let amount, let horizon):
+            try c.encode(amount, forKey: .amount)
+            try c.encode(horizon, forKey: .horizon)
         case .custom(let shader):
             try c.encode(shader.name, forKey: .name)
             try c.encode(shader.body, forKey: .body)
@@ -343,6 +365,14 @@ public struct LookRecipe: Codable, Sendable, Equatable {
             for (name, value) in [("red", red), ("green", green), ("blue", blue)] { try check(value, 0...1, "\(path).\(name) 0…1") }
             guard red + green + blue > 0.01 else { throw .outOfRange("\(path) 权重之和必须大于 0") }
         case .bloom(let amount): try check(amount, 0...1, "\(path).amount 0…1")
+        case .subjectLight(let x, let y, let radius, let amount):
+            try check(x, 0...1, "\(path).x 0…1")
+            try check(y, 0...1, "\(path).y 0…1")
+            try check(radius, 0.05...1, "\(path).radius 0.05…1")
+            try check(amount, -1...1, "\(path).amount −1…1")
+        case .skyRecover(let amount, let horizon):
+            try check(amount, 0...1, "\(path).amount 0…1")
+            try check(horizon, 0...1, "\(path).horizon 0…1")
         case .custom(let shader):
             guard shader.params.count <= ShaderSandbox.maxParams else { throw .outOfRange("\(path).params 最多 8 个") }
             for value in shader.params { try check(value, -10...10, "\(path).params −10…10") }
