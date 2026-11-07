@@ -95,7 +95,7 @@ struct CameraView: View {
     }
 
     private var viewfinder: some View {
-        LivePreview(frames: model.capture.frames, recipe: model.look,
+        LivePreview(frames: model.capture.frames, pipeline: model.pipeline,
                     onFocus: focus,
                     markerColor: agent.isEnabled ? UIColor(Theme.Palette.accent) : .white)
             .background(.black)

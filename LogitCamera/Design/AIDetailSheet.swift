@@ -36,6 +36,14 @@ struct AIDetailSheet: View {
                         }
                     }
                     .accessibilityIdentifier("camera.autoCapture")
+                    Toggle(isOn: Binding(get: { agent.smartCorrection }, set: { agent.smartCorrection = $0 })) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("智能修正")
+                            Text(agent.correctionNote.map { "刚刚：\($0)" } ?? "自动处理偏色、高光、暗部、逆光主体与天空")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("camera.smartCorrection")
                     if agent.phase == .cooldown {
                         Button {
                             model.armAutoCapture()

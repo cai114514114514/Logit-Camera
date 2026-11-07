@@ -32,7 +32,12 @@ final class CameraModel {
     /// 选片完成后短暂展示的一组缩略图。
     var burstPreview: BurstPreview?
     /// 当前生效的滤镜配方（预设 + 微调 + 强度）：取景实时生效，成片按快门按下那一刻的配方渲染。
-    private(set) var look: LookRecipe = .identity
+    private(set) var look: LookRecipe = .identity { didSet { pipeline.recipe = look } }
+    /// 取景渲染读取的修正层与滤镜。
+    @ObservationIgnored let pipeline = LookPipeline()
+    /// 按下快门时冻结的 AI 修正参数（AI 关闭或关掉修正时为空）。
+    @ObservationIgnored private var pendingCorrection: CorrectionParams?
+    @ObservationIgnored private var latestCorrectionOps: [LookOp] = []
     /// 内置预设与「我的滤镜」。
     let presets: [LookRecipe] = Knowledge.looks()
     private(set) var myLooks: [LookRecipe] = LookLibrary.load()
@@ -46,6 +51,7 @@ final class CameraModel {
     private(set) var latestOriginal: CapturedPhoto?
     /// 单张拍摄（AI 关闭）按下快门时冻结的配方。
     @ObservationIgnored private var pendingLook: LookRecipe = .identity
+    @ObservationIgnored private var pendingCrop: CameraCore.NormalizedRect?
     var notice: CameraNotice?
     /// 当前手动参数是否由 AI 设定。用户任何接管都会清除。
     var agentOwnsSettings = false
@@ -79,6 +85,8 @@ final class CameraModel {
             Task { @MainActor in self?.receive(event) }
         }
         agent.onFire = { [weak self] crop, ratio in self?.takeAutomaticPhoto(crop: crop, ratio: ratio) ?? false }
+        let pipeline = self.pipeline
+        agent.onCorrection = { ops in pipeline.correction = ops }
         agent.onPlanApplied = { [weak self] _ in
             // AI 方案决定镜头、曝光与画幅；读数标为 AI 设定。
             self?.agentOwnsSettings = true
@@ -211,6 +219,7 @@ final class CameraModel {
             notice = nil
             shutterTick += 1
             pendingLook = look
+            pendingCorrection = nil
             capture.capture()
         }
     }
@@ -221,11 +230,13 @@ final class CameraModel {
         notice = nil
         shutterTick += 1
         pendingLook = look
+        pendingCorrection = agent.isEnabled && agent.smartCorrection ? agent.currentCorrection : nil
+        pendingCrop = crop
         capture.captureBurst(count: Self.burstCount, crop: crop, ratio: ratio)
     }
 
     /// 连拍拍完：先让 AI 进入冷却、释放快门，再在后台选片；最好的一张走正常保存流程，其余存为备选。
-    private func select(_ photos: [CapturedPhoto], automatic: Bool, look: LookRecipe) {
+    private func select(_ photos: [CapturedPhoto], automatic: Bool, look: LookRecipe, correction: [LookOp]) {
         burstSequence += 1
         let sequence = burstSequence
         let genre = agent.plan?.genre ?? .general
@@ -243,8 +254,11 @@ final class CameraModel {
             let best = BurstSelector.best(qualities, genre: genre)
             let scores = BurstSelector.scores(qualities, genre: genre)
             let original = photos[min(best, photos.count - 1)]
-            let chosen = await Self.graded(original, look: look)
-            if sequence == burstSequence { latestOriginal = original }
+            let chosen = await Self.graded(original, look: look, correction: correction)
+            if sequence == burstSequence {
+                latestOriginal = original
+                latestCorrectionOps = correction
+            }
             agent.record(photoID: chosen.id, automatic: automatic)
             let stored: [BurstAlternate] = await Task.detached(priority: .utility) {
                 guard photos.count > 1 else { return [] }
@@ -373,7 +387,8 @@ final class CameraModel {
     func saveAsNewPhoto(look recipe: LookRecipe) async {
         guard let original = latestOriginal else { return }
         let rendered = await Self.graded(CapturedPhoto(data: original.data, aperture: original.aperture, iso: original.iso,
-                                                       exposureSeconds: original.exposureSeconds), look: recipe)
+                                                       exposureSeconds: original.exposureSeconds), look: recipe,
+                                         correction: latestCorrectionOps)
         do {
             try await PhotoLibrary.save(rendered)
             post("已用「\(recipe.name)」另存为新照片")
@@ -383,10 +398,11 @@ final class CameraModel {
     }
 
     /// 按配方渲染成片（后台）；配方为空或渲染失败时返回原片，照片照常保存。
-    nonisolated private static func graded(_ photo: CapturedPhoto, look: LookRecipe) async -> CapturedPhoto {
-        guard !look.isIdentity else { return photo }
+    nonisolated private static func graded(_ photo: CapturedPhoto, look: LookRecipe,
+                                           correction: [LookOp] = []) async -> CapturedPhoto {
+        guard !look.isIdentity || !correction.isEmpty else { return photo }
         return await Task.detached(priority: .userInitiated) {
-            (try? LookRenderer.renderPhoto(photo.data, recipe: look)).map(photo.replacingData) ?? photo
+            (try? LookRenderer.renderPhoto(photo.data, recipe: look, correction: correction)).map(photo.replacingData) ?? photo
         }.value
     }
 
@@ -445,6 +461,7 @@ final class CameraModel {
             Task {
                 let photo = await Self.graded(original, look: look)
                 latestOriginal = original
+                latestCorrectionOps = []
                 show(photo)
                 await persistAndSave(photo)
             }
@@ -453,7 +470,8 @@ final class CameraModel {
             automaticCapturePending = false
             capturePending = false
             agent.captured(automatic: automatic)
-            select(photos, automatic: automatic, look: pendingLook)
+            let correction = pendingCorrection?.ops(for: pendingCrop ?? .full, sensorAspect: Executor.sensorAspect) ?? []
+            select(photos, automatic: automatic, look: pendingLook, correction: correction)
         }
     }
 }

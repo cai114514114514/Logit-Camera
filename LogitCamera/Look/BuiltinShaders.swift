@@ -63,7 +63,30 @@ enum BuiltinShaders {
     return float4(g, g, g, color.a);
     """
 
-    static let all = [hsl, colorGrade, grain, vignette, mono]
+    /// 主体补光：v0 x、v1 y（左上原点）、v2 半径（相对短边）、v3 EV、v4 宽高比。
+    static let subjectLight = """
+    float2 d = (uv - float2(p.v[0], p.v[1])) * float2(p.v[4], 1.0) / min(p.v[4], 1.0);
+    float r = length(d);
+    float mask = 1.0 - smoothstep(p.v[2] * 0.6, p.v[2] * 1.4, r);
+    float3 linear = pow(max(color.rgb, 0.0), float3(2.2));
+    linear *= exp2(p.v[3] * mask);
+    return float4(clamp(pow(linear, float3(1.0 / 2.2)), 0.0, 1.0), color.a);
+    """
+
+    /// 天空恢复：v0 强度、v1 天空下沿（左上原点）。
+    static let skyRecover = """
+    float l = logit_luma(color.rgb);
+    float blue = clamp((color.b - color.r) * 3.0 + 0.4, 0.0, 1.0);
+    float above = 1.0 - smoothstep(p.v[1] - 0.12, p.v[1] + 0.08, uv.y);
+    float sky = smoothstep(0.35, 0.8, l) * blue * above;
+    float3 linear = pow(max(color.rgb, 0.0), float3(2.2)) * exp2(-0.8 * p.v[0] * sky);
+    float3 c = pow(linear, float3(1.0 / 2.2));
+    float g = logit_luma(c);
+    c = mix(float3(g), c, 1.0 + 0.3 * p.v[0] * sky);
+    return float4(clamp(c, 0.0, 1.0), color.a);
+    """
+
+    static let all = [hsl, colorGrade, grain, vignette, mono, subjectLight, skyRecover]
 
     /// 启动时在后台预编译，取景打开滤镜时不必等待。
     static func warmUp() {

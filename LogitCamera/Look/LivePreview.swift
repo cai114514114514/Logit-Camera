@@ -11,7 +11,7 @@ final class LiveRenderer: @unchecked Sendable {
     private let context: CIContext?
     private let lock = NSLock()
     private let inFlight = DispatchSemaphore(value: 2)
-    private var recipe = LookRecipe.identity
+    private var pipeline = LookPipeline()
     private weak var layer: CAMetalLayer?
     private var drawableSize: CGSize = .zero
     private var imageSize: CGSize = .zero
@@ -32,13 +32,14 @@ final class LiveRenderer: @unchecked Sendable {
     }
 
     func setDrawableSize(_ size: CGSize) { lock.withLock { drawableSize = size } }
-    func setRecipe(_ recipe: LookRecipe) { lock.withLock { self.recipe = recipe } }
+    func setPipeline(_ pipeline: LookPipeline) { lock.withLock { self.pipeline = pipeline } }
     /// 最近一帧的像素尺寸（直立），用于点按坐标换算。
     var latestImageSize: CGSize { lock.withLock { imageSize } }
 
     /// 帧队列上调用。
     func render(_ buffer: CVPixelBuffer) {
-        let (layer, size, recipe) = lock.withLock { (self.layer, drawableSize, self.recipe) }
+        let (layer, size, pipeline) = lock.withLock { (self.layer, drawableSize, self.pipeline) }
+        let (correction, recipe) = pipeline.snapshot
         let image = CIImage(cvPixelBuffer: buffer)
         lock.withLock { imageSize = image.extent.size }
         guard let layer, let queue, let context, size.width > 0, size.height > 0 else { return }
@@ -53,7 +54,11 @@ final class LiveRenderer: @unchecked Sendable {
         let dx = (scaled.extent.width - size.width) / 2, dy = (scaled.extent.height - size.height) / 2
         let framed = scaled.transformed(by: CGAffineTransform(translationX: -scaled.extent.minX - dx, y: -scaled.extent.minY - dy))
             .cropped(to: CGRect(origin: .zero, size: size))
-        let graded = LookRenderer.apply(recipe, to: framed, time: ProcessInfo.processInfo.systemUptime - start)
+        let time = ProcessInfo.processInfo.systemUptime - start
+        // AI 修正在前（全画幅坐标），用户滤镜在后；滤镜强度不影响修正。
+        let corrected = correction.isEmpty ? framed
+            : LookRenderer.apply(LookRecipe(name: "AI 修正", correction: correction), to: framed, time: time)
+        let graded = LookRenderer.apply(recipe, to: corrected, time: time)
         let destination = CIRenderDestination(mtlTexture: drawable.texture, commandBuffer: commandBuffer)
         destination.isFlipped = true
         destination.colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
@@ -72,7 +77,7 @@ final class LiveRenderer: @unchecked Sendable {
 /// 用 Metal 实时取景替代系统预览层；点按对焦、对焦标记与无障碍标识与原来一致。
 struct LivePreview: UIViewRepresentable {
     let frames: FrameGrabber
-    let recipe: LookRecipe
+    let pipeline: LookPipeline
     let onFocus: (CGPoint) -> Void
     var markerColor: UIColor = .white
 
@@ -91,7 +96,7 @@ struct LivePreview: UIViewRepresentable {
     private func update(_ view: PreviewView) {
         view.onFocus = onFocus
         view.markerColor = markerColor
-        view.renderer.setRecipe(recipe)
+        view.renderer.setPipeline(pipeline)
     }
 
     final class PreviewView: UIView {

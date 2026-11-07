@@ -28,6 +28,23 @@ final class AgentController {
     private(set) var lens: LensStop?
     /// AI 此刻要说的一句人话（字幕）；nil 表示不显示。
     private(set) var caption: String?
+    /// AI 修正（C3）：默认开启；关掉后取景与成片都不再修正。
+    var smartCorrection = true {
+        didSet {
+            correctionSmoother.reset()
+            currentCorrection = nil
+            onCorrection?([])
+            correctionNote = nil
+        }
+    }
+    /// 修正此刻最显著的一项（字幕与详情面板用）。
+    private(set) var correctionNote: String?
+    /// 平滑后的当前修正参数（每秒约 10 次，不触发界面刷新）。
+    @ObservationIgnored private(set) var currentCorrection: CorrectionParams?
+    /// 修正层的调色操作（全画幅坐标），交给取景渲染。
+    @ObservationIgnored var onCorrection: (([LookOp]) -> Void)?
+    @ObservationIgnored private var correctionSmoother = CorrectionSmoother()
+    @ObservationIgnored private var lastCorrectionTime: TimeInterval?
     /// 每次真正截取一帧发给模型时加一，驱动取景扫描线。
     private(set) var observationTick = 0
     private(set) var calls = 0
@@ -120,6 +137,11 @@ final class AgentController {
         moment = nil
         lens = nil
         caption = nil
+        correctionSmoother.reset()
+        currentCorrection = nil
+        correctionNote = nil
+        lastCorrectionTime = nil
+        onCorrection?([])
         captions = CaptionDirector()
         status = "AI 待命"
         reason = ""
@@ -176,7 +198,7 @@ final class AgentController {
             phase: phase, isOffline: isOffline, genre: plan?.genre, genreName: genreName,
             isDefaultPlan: isDefaultPlan, planID: plan?.id, rationale: plan?.rationale, lens: lens,
             depth: plan?.exposure.depth, waitingFor: waiting, starved: executor.lastExposure?.starved ?? false,
-            pickedAt: pickedAt)
+            pickedAt: pickedAt, correctionNote: smartCorrection ? correctionNote : nil)
         let text = captions.update(snapshot, now: now)
         if text != caption { caption = text }
     }
@@ -208,8 +230,21 @@ final class AgentController {
         // 关闭自动拍摄时仍显示时机分，但不触发快门，由用户自己按。
         if !autoCaptureEnabled { report = report.withoutFire }
         moment = report
+        updateCorrection(m)
         handle(.measurement(m, report))
         refreshCaption()
+    }
+
+    private func updateCorrection(_ m: SceneMeasurement) {
+        guard smartCorrection else { return }
+        let t = now
+        let dt = lastCorrectionTime.map { t - $0 } ?? 0
+        lastCorrectionTime = t
+        let params = correctionSmoother.step(CorrectionPlanner.plan(m, genre: plan?.genre), dt: dt)
+        currentCorrection = params
+        onCorrection?(params.ops(for: .full, sensorAspect: Executor.sensorAspect))
+        let note = params.note
+        if note != correctionNote { correctionNote = note }
     }
 
     // MARK: - Scheduler

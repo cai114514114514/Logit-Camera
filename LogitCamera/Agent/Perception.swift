@@ -137,7 +137,8 @@ actor Perception {
             deviceAngularSpeed: motion.angularSpeed,
             subjectSpeed: subjectSpeed(primary, at: timestamp),
             sceneChange: MeasurementMath.sceneChange(baseline ?? signature, signature),
-            aesthetics: aesthetics.value(now: now, epoch: epoch, maxAge: slowMaxAge) ?? nil)
+            aesthetics: aesthetics.value(now: now, epoch: epoch, maxAge: slowMaxAge) ?? nil,
+            chroma: Self.chroma(buffer))
         onMeasurement(measurement)
 
         let cost = (ProcessInfo.processInfo.systemUptime - started) * 1000
@@ -252,6 +253,35 @@ actor Perception {
 
     /// Y 平面按步长采样为长边约 320 的灰度图（每个输出像素取 2×2 个采样点的平均）。
     /// 全分辨率帧上做高质量重采样太贵；这些测量不需要高质量缩放。
+    /// CbCr 平面按 48×64 网格采样（YCbCr 420 双平面），得到偏色、饱和度与上方亮度统计。
+    static func chroma(_ buffer: CVPixelBuffer) -> ChromaStats? {
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard CVPixelBufferGetPlaneCount(buffer) >= 2,
+              let yBase = CVPixelBufferGetBaseAddressOfPlane(buffer, 0),
+              let cBase = CVPixelBufferGetBaseAddressOfPlane(buffer, 1) else { return nil }
+        let width = CVPixelBufferGetWidthOfPlane(buffer, 0), height = CVPixelBufferGetHeightOfPlane(buffer, 0)
+        let yRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0), cRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
+        let cWidth = CVPixelBufferGetWidthOfPlane(buffer, 1), cHeight = CVPixelBufferGetHeightOfPlane(buffer, 1)
+        guard width > 0, height > 0, cWidth > 0, cHeight > 0 else { return nil }
+        let gw = 48, gh = 64
+        var cb = [UInt8](repeating: 128, count: gw * gh), cr = cb, luma = cb
+        let ySource = yBase.assumingMemoryBound(to: UInt8.self), cSource = cBase.assumingMemoryBound(to: UInt8.self)
+        for gy in 0..<gh {
+            let y = min(height - 1, (gy * height + height / 2) / gh)
+            let cy = min(cHeight - 1, y * cHeight / height)
+            for gx in 0..<gw {
+                let x = min(width - 1, (gx * width + width / 2) / gw)
+                let cx = min(cWidth - 1, x * cWidth / width)
+                let i = gy * gw + gx
+                luma[i] = ySource[y * yRow + x]
+                cb[i] = cSource[cy * cRow + cx * 2]
+                cr[i] = cSource[cy * cRow + cx * 2 + 1]
+            }
+        }
+        return MeasurementMath.chroma(cb: cb, cr: cr, luma: luma, width: gw, height: gh)
+    }
+
     static func luma(_ buffer: CVPixelBuffer) -> LumaImage? {
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }

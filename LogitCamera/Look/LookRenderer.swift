@@ -95,6 +95,12 @@ enum LookRenderer {
             return image.applyingFilter("CIBloom", parameters: [
                 kCIInputRadiusKey: shortSide(extent) * 0.02, kCIInputIntensityKey: amount
             ]).cropped(to: image.extent)
+        case .subjectLight(let x, let y, let radius, let amount):
+            let params: [Float] = [x, y, radius, amount, aspect(extent)].map(Float.init)
+            return builtin(BuiltinShaders.subjectLight, params, image, extent: extent, time: time, synchronous: synchronous)
+        case .skyRecover(let amount, let horizon):
+            return builtin(BuiltinShaders.skyRecover, [Float(amount), Float(horizon)], image, extent: extent, time: time,
+                           synchronous: synchronous)
         case .custom(let shader):
             let compiler = ShaderCompiler.shared
             guard let pipeline = synchronous ? compiler.pipelineNow(for: shader.body) : compiler.pipeline(for: shader.body)
@@ -137,9 +143,11 @@ enum LookRenderer {
     }
 
     /// 成片：按配方渲染已裁切的原片，输出 10-bit HEIC（Display P3），保留拍摄元数据。
-    static func renderPhoto(_ data: Data, recipe: LookRecipe) throws -> Data {
+    static func renderPhoto(_ data: Data, recipe: LookRecipe, correction: [LookOp] = []) throws -> Data {
         guard let image = CIImage(data: data, options: [.applyOrientationProperty: true]) else { throw CameraFailure.capture }
-        let graded = apply(recipe, to: image, synchronous: true)
+        let corrected = correction.isEmpty ? image
+            : apply(LookRecipe(name: "AI 修正", correction: correction), to: image, synchronous: true)
+        let graded = apply(recipe, to: corrected, synchronous: true)
         var properties = image.properties
         properties[kCGImagePropertyOrientation as String] = 1
         if var tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any] {

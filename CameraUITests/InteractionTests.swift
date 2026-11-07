@@ -121,6 +121,7 @@ final class InteractionTests: XCTestCase {
         add(shot)
     }
 
+    @MainActor
     private func attachShot(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = name
@@ -178,5 +179,27 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["detail.saveLook"].waitForExistence(timeout: 5))
         Thread.sleep(forTimeInterval: 2)
         attachShot(app, "looks-relook-mono")
+    }
+
+    /// C3：AI 开启（离线导演）时修正层生效，详情里可以关掉智能修正。
+    @MainActor
+    func testSmartCorrectionToggle() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-LogitOfflineDirector"]
+        app.launch()
+        let ai = app.buttons["camera.ai"]
+        XCTAssertTrue(ai.waitForExistence(timeout: 15))
+        ai.tap()
+        Thread.sleep(forTimeInterval: 3)
+        attachShot(app, "correction-on")
+        app.descendants(matching: .any)["camera.agent"].firstMatch.tap()
+        let toggle = app.switches["camera.smartCorrection"]
+        if !toggle.waitForExistence(timeout: 3) { app.descendants(matching: .any)["camera.agent"].firstMatch.tap() }
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        attachShot(app, "correction-detail")
+        XCTAssertEqual(toggle.value as? String, "1")
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "0")
     }
 }
