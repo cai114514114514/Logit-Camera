@@ -39,9 +39,22 @@ final class PhotoCapture: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Se
     }
 }
 
+/// 一组连拍的结果收集（只在相机队列上访问）。
+final class BurstCollector {
+    var photos: [CapturedPhoto?]
+    var remaining: Int
+
+    init(count: Int) {
+        photos = Array(repeating: nil, count: count)
+        remaining = count
+    }
+}
+
 extension CaptureSession {
-    /// - Parameter crop: AI 方案的裁切框（拍摄瞬间冻结）；为空时按画幅居中裁切。
-    func capture(crop: CameraCore.NormalizedRect? = nil) {
+    /// - Parameters:
+    ///   - crop: AI 方案的裁切框（拍摄瞬间冻结）；为空时按画幅居中裁切。
+    ///   - ratio: 与裁切框一起冻结的画幅；为空时用当前画幅。
+    func capture(crop: CameraCore.NormalizedRect? = nil, ratio: FrameRatio? = nil) {
         queue.async {
             guard self.state.canCapture else {
                 self.onEvent?(.captureRejected)
@@ -49,15 +62,11 @@ extension CaptureSession {
             }
             let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
             settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
-            // Preserve requested manual settings. Balanced capture can override
-            // exposure settings for multi-frame processing in low light.
+            // 手动参数只有 speed 才会被照片采用；balanced 在弱光下会为多帧合成改写曝光。
             settings.photoQualityPrioritization = self.state.hasManualExposure ? .speed : .balanced
-            if let connection = self.photoOutput.connection(with: .video),
-               connection.isVideoRotationAngleSupported(90) {
-                connection.videoRotationAngle = 90
-            }
+            self.alignPhotoConnection()
             let identifier = settings.uniqueID
-            let processor = PhotoCapture(ratio: self.state.ratio, crop: crop) { [weak self = self] result in
+            let processor = PhotoCapture(ratio: ratio ?? self.state.ratio, crop: crop) { [weak self = self] result in
                 guard let self else { return }
                 self.queue.async {
                     self.processors[identifier] = nil
@@ -73,6 +82,58 @@ extension CaptureSession {
             self.state.isCapturing = true
             self.publish()
             self.photoOutput.capturePhoto(with: settings, delegate: processor)
+        }
+    }
+
+    /// AI 开启时的连拍：背靠背发出 `count` 次拍摄（约 0.4 秒拍完 6 张），全部完成后发出 `.burst`。
+    /// 期间 `isBursting` 为真：不能再次拍摄，AI 也不写硬件。
+    func captureBurst(count: Int, crop: CameraCore.NormalizedRect?, ratio: FrameRatio) {
+        queue.async {
+            guard self.state.canCapture, count > 0 else {
+                self.onEvent?(.captureRejected)
+                return
+            }
+            let burstID = UUID()
+            let collector = BurstCollector(count: count)
+            self.bursts[burstID] = collector
+            self.state.isCapturing = true
+            self.state.isBursting = true
+            self.publish()
+            self.alignPhotoConnection()
+            for index in 0..<count {
+                let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+                settings.maxPhotoDimensions = self.burstDimensions ?? self.photoOutput.maxPhotoDimensions
+                settings.photoQualityPrioritization = .speed
+                let identifier = settings.uniqueID
+                let processor = PhotoCapture(ratio: ratio, crop: crop) { [weak self = self] result in
+                    guard let self else { return }
+                    self.queue.async {
+                        self.processors[identifier] = nil
+                        guard let collector = self.bursts[burstID] else { return }
+                        if case .success(let photo) = result { collector.photos[index] = photo }
+                        collector.remaining -= 1
+                        guard collector.remaining == 0 else { return }
+                        self.bursts[burstID] = nil
+                        self.state.isCapturing = false
+                        self.state.isBursting = false
+                        self.publish()
+                        let photos = collector.photos.compactMap { $0 }
+                        if photos.isEmpty {
+                            self.onEvent?(.captureFailed(CameraFailure.capture.localizedDescription))
+                        } else {
+                            self.onEvent?(.burst(photos))
+                        }
+                    }
+                }
+                self.processors[identifier] = processor
+                self.photoOutput.capturePhoto(with: settings, delegate: processor)
+            }
+        }
+    }
+
+    private func alignPhotoConnection() {
+        if let connection = photoOutput.connection(with: .video), connection.isVideoRotationAngleSupported(90) {
+            connection.videoRotationAngle = 90
         }
     }
 }

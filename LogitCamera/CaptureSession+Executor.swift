@@ -3,80 +3,82 @@ import CameraCore
 import Foundation
 
 /// 执行层使用的硬件入口。全部在相机串行队列上执行，失败只上报错误、不抛出。
+/// AI 的写入不置 `isApplying`，因此永远不会阻塞快门。
 extension CaptureSession {
-    /// 直立全画幅归一化坐标（左上原点）→ 设备兴趣点坐标（后置主摄，取景旋转 90°）。
+    /// 直立全画幅归一化坐标（左上原点）→ 设备兴趣点坐标（后置镜头，取景旋转 90°）。
     static func devicePoint(_ point: CameraCore.NormalizedPoint) -> CGPoint {
         CGPoint(x: point.y, y: 1 - point.x)
     }
 
-    /// 连续自动对焦并把对焦与测光点放在主体上。
+    /// 连续自动对焦，对焦点放在主体上。全手动曝光时由本机测光，不再移动测光点。
     func setSubjectPoint(_ point: CameraCore.NormalizedPoint) {
         queue.async {
-            guard self.state.canCapture, let device = self.device else { return }
+            guard self.state.phase == .ready, !self.state.isBursting, let device = self.device else { return }
             let target = Self.devicePoint(point)
             do {
                 try device.lockForConfiguration()
                 defer { device.unlockForConfiguration() }
                 if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = target }
                 if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
-                if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = target }
-                // 自动或光圈优先时，重新设置模式才会让新的测光点生效；已锁快门时只移动兴趣点。
-                if self.state.selectedShutter == nil, self.state.selectedISO == nil {
+                if device.exposureMode != .custom, device.isExposurePointOfInterestSupported {
+                    device.exposurePointOfInterest = target
                     if device.exposureMode == .continuousAutoExposure { device.exposureMode = .continuousAutoExposure }
                 }
             } catch { self.onEvent?(.error(error.localizedDescription)) }
         }
     }
 
-    func setAgentBias(_ bias: Double) {
+    /// AI 的全手动曝光：主摄可变光圈时连同光圈一起写入，否则只写快门与 ISO。
+    func setManualExposure(_ target: ExposureTarget) {
         queue.async {
-            guard self.state.canCapture, let device = self.device else { return }
-            let value = min(max(Float(bias), device.minExposureTargetBias), device.maxExposureTargetBias)
-            do {
-                try device.lockForConfiguration()
-                defer { device.unlockForConfiguration() }
-                device.setExposureTargetBias(value, completionHandler: nil)
-                self.readExposure()
-            } catch { self.onEvent?(.error(error.localizedDescription)) }
-        }
-    }
-
-    /// 固定快门、ISO 自动，光圈保持当前目标。
-    func lockShutter(_ seconds: Double) {
-        queue.async {
-            guard self.state.canCapture, let device = self.device else { return }
-            let aperture = self.state.selectedAperture ?? AVCaptureDevice.autoLensAperture
+            guard self.state.phase == .ready, !self.state.isBursting, !self.state.isApplying,
+                  let device = self.device else { return }
+            let format = device.activeFormat
+            let seconds = min(max(target.shutter, format.minExposureDuration.seconds), format.maxExposureDuration.seconds)
             let duration = CMTime(seconds: seconds, preferredTimescale: 1_000_000_000)
-            guard device.activeFormat.supportsExposureModeCustom(lensAperture: aperture, duration: duration,
-                                                                 iso: AVCaptureDevice.autoISO) else { return }
+            let iso = min(max(Float(target.iso), format.minISO), format.maxISO)
+            let aperture = target.aperture.map(Float.init)
             do {
                 try device.lockForConfiguration()
                 defer { device.unlockForConfiguration() }
-                self.exposureRevision += 1
-                let revision = self.exposureRevision
-                self.state.selectedShutter = seconds
-                self.state.isApplying = true
-                self.publish()
-                device.setExposureModeCustom(lensAperture: aperture, duration: duration, iso: AVCaptureDevice.autoISO) { [weak self = self] _ in
+                self.agentRevision += 1
+                let revision = self.agentRevision
+                let done: @Sendable (CMTime) -> Void = { [weak self = self] _ in
                     guard let self else { return }
                     self.queue.async {
-                        guard revision == self.exposureRevision else { return }
-                        self.state.isApplying = false
+                        guard revision == self.agentRevision else { return }
+                        self.state.agentWritePending = false
                         self.readExposure()
                     }
                 }
+                if let aperture, self.state.supportsAperturePriority,
+                   format.supportsExposureModeCustom(lensAperture: aperture, duration: duration, iso: iso) {
+                    device.setExposureModeCustom(lensAperture: aperture, duration: duration, iso: iso, completionHandler: done)
+                    self.state.selectedAperture = aperture
+                } else if device.isExposureModeSupported(.custom) {
+                    device.setExposureModeCustom(duration: duration, iso: iso, completionHandler: done)
+                } else {
+                    return
+                }
+                self.state.agentWritePending = true
+                self.state.selectedShutter = seconds
+                self.state.selectedISO = Double(iso)
+                self.publish()
             } catch { self.onEvent?(.error(error.localizedDescription)) }
         }
     }
 
-    /// 释放快门锁，回到光圈优先（或全自动）。
-    func releaseShutter() {
+    /// AI 停止：回到系统自动曝光（保留用户自己选的光圈优先）。
+    func releaseManualExposure() {
         queue.async {
-            guard self.state.canCapture, let device = self.device else { return }
+            guard let device = self.device, self.state.phase == .ready else { return }
+            self.agentRevision += 1
+            self.state.agentWritePending = false
+            guard device.exposureMode == .custom else { return }
             do {
                 try device.lockForConfiguration()
                 defer { device.unlockForConfiguration() }
-                try self.applyExposureLocked(self.state.selectedAperture, to: device)
+                try self.applyExposureLocked(nil, to: device)
             } catch { self.onEvent?(.error(error.localizedDescription)) }
         }
     }

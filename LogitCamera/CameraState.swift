@@ -18,6 +18,9 @@ struct CameraState: Sendable {
     var zoom: Float = 1
     var minZoom: Float = 1
     var minISO: Float = 50
+    var maxISO: Float = 3200
+    var minShutter: Double = 1.0 / 8000
+    var maxShutter: Double = 1
     var maxZoom: Float = 1
     var aperture: Float?
     var iso: Float?
@@ -25,8 +28,14 @@ struct CameraState: Sendable {
     var exposureBias: Float = 0
     var minimumBias: Float = -2
     var maximumBias: Float = 2
+    /// 用户改光圈等需要等待硬件完成的操作；期间不能拍。AI 的曝光写入不使用它。
     var isApplying = false
     var isCapturing = false
+    var isBursting = false
+    /// AI 的全手动曝光写入尚未生效（不影响拍摄）。
+    var agentWritePending = false
+    var lensStops: [LensStop] = []
+    var activeLens: LensStop?
 
     var canAdjust: Bool {
         phase == .ready && supportsAperturePriority && !isApplying && !isCapturing
@@ -53,6 +62,8 @@ struct CapturedPhoto: Sendable, Identifiable {
 enum CameraEvent: Sendable {
     case state(CameraState)
     case photo(CapturedPhoto)
+    /// AI 开启时的一组连拍（按拍摄顺序，可能少于请求的张数）。
+    case burst([CapturedPhoto])
     case captureRejected
     case captureFailed(String)
     case error(String)

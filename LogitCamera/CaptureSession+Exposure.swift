@@ -6,27 +6,6 @@ extension CaptureSession {
     /// 每秒变化 2^8 倍以内：1× → 3× 约 0.2 秒，平滑而不拖沓。
     static let zoomRampRate: Float = 8
 
-    /// `animated` 用于档位切换；双指缩放逐帧直接设置以保持跟手。
-    func setZoom(_ factor: Double, animated: Bool) {
-        queue.async {
-            guard self.state.canCapture, let device = self.device else { return }
-            let target = CGFloat(ZoomStops.clamp(factor, min: Double(device.minAvailableVideoZoomFactor),
-                                                 max: min(3, Double(device.maxAvailableVideoZoomFactor))))
-            do {
-                try device.lockForConfiguration()
-                defer { device.unlockForConfiguration() }
-                if animated {
-                    device.ramp(toVideoZoomFactor: target, withRate: Self.zoomRampRate)
-                } else {
-                    device.cancelVideoZoomRamp()
-                    device.videoZoomFactor = target
-                }
-                self.state.zoom = Float(target)
-                self.publish()
-            } catch { self.onEvent?(.error(error.localizedDescription)) }
-        }
-    }
-
     func setAperture(_ aperture: Float?) {
         queue.async {
             guard self.state.canCapture, let device = self.device else { return }
@@ -129,11 +108,11 @@ extension CaptureSession {
                 if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
                 // The metering point must be set before applying exposure mode.
                 try self.applyExposureLocked(nil, to: device)
-                device.videoZoomFactor = max(1, device.minAvailableVideoZoomFactor)
                 device.setExposureTargetBias(0, completionHandler: nil)
                 self.state.ratio = .standard
-                self.readExposure()
             } catch { self.onEvent?(.error(error.localizedDescription)) }
+            self.applyZoom(1, animated: false)
+            self.readExposure()
         }
     }
 }

@@ -16,7 +16,13 @@ final class CaptureSession: NSObject, @unchecked Sendable {
     var onEvent: (@Sendable (CameraEvent) -> Void)?
     var processors: [Int64: PhotoCapture] = [:]
     var exposureRevision = 0
+    /// AI 曝光写入的版本号；换镜头或用户接管后旧的完成回调被忽略。
+    var agentRevision = 0
     var needsExposureReset = false
+    var lensDevices: [LensStop.Lens: AVCaptureDevice] = [:]
+    var currentLens: LensStop.Lens = .wide
+    var burstDimensions: CMVideoDimensions?
+    var bursts: [UUID: BurstCollector] = [:]
     private var configured = false
     private var wantsRunning = false
     private var timer: DispatchSourceTimer?
@@ -95,7 +101,7 @@ final class CaptureSession: NSObject, @unchecked Sendable {
             guard session.isRunning else { throw CameraFailure.configuration }
             state.phase = .ready
             state.message = state.supportsAperturePriority
-                ? "主摄 · 实时取景" : "当前镜头不支持可变光圈优先，仍可拍照"
+                ? "\(state.lensName) · 实时取景" : "\(state.lensName) · 固定光圈"
             startMetering()
             readExposure()
         } catch {
@@ -106,10 +112,9 @@ final class CaptureSession: NSObject, @unchecked Sendable {
     }
 
     private func configure() throws {
-        // Use the physical main camera so automatic virtual-camera switching
-        // cannot silently substitute a fixed-aperture ultrawide or telephoto.
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
-        else { throw CameraFailure.unavailable }
+        discoverLenses()
+        // 物理镜头分别作为输入（虚拟三摄不支持全手动曝光）。默认主摄。
+        guard let camera = lensDevices[.wide] else { throw CameraFailure.unavailable }
         let input = try AVCaptureDeviceInput(device: camera)
         session.beginConfiguration()
         defer { session.commitConfiguration() }
@@ -134,30 +139,17 @@ final class CaptureSession: NSObject, @unchecked Sendable {
             connection.videoRotationAngle = 90
         }
         photoOutput.maxPhotoQualityPrioritization = .quality
+        if photoOutput.isResponsiveCaptureSupported { photoOutput.isResponsiveCaptureEnabled = true }
         if let dimensions = camera.activeFormat.supportedMaxPhotoDimensions.max(by: {
             Int64($0.width) * Int64($0.height) < Int64($1.width) * Int64($1.height)
         }) {
             photoOutput.maxPhotoDimensions = dimensions
         }
         device = camera
-        state.lensName = camera.localizedName
-        let format = camera.activeFormat
-        state.apertureRange = ApertureRange(
-            minimum: format.minLensAperture,
-            maximum: format.maxLensAperture,
-            stops: format.recommendedLensApertureStops
-        )
-        state.supportsAperturePriority = state.apertureRange?.isVariable == true
-            && format.supportsExposureModeCustom(
-                lensAperture: AVCaptureDevice.currentLensAperture,
-                duration: AVCaptureDevice.autoExposureDuration,
-                iso: AVCaptureDevice.autoISO
-            )
-        state.minZoom = Float(camera.minAvailableVideoZoomFactor)
-        state.minISO = camera.activeFormat.minISO
-        state.maxZoom = Float(min(3, camera.maxAvailableVideoZoomFactor))
-        state.minimumBias = max(-2, camera.minExposureTargetBias)
-        state.maximumBias = min(2, camera.maxExposureTargetBias)
+        currentLens = .wide
+        describe(camera)
+        state.zoom = 1
+        state.activeLens = state.lensStops.first { $0.lens == .wide && $0.zoomFactor == 1 }
         configured = true
     }
 
@@ -188,7 +180,7 @@ final class CaptureSession: NSObject, @unchecked Sendable {
         state.iso = device.iso
         state.exposureSeconds = device.exposureDuration.seconds
         state.exposureBias = device.exposureTargetBias
-        state.zoom = Float(device.videoZoomFactor)
+        state.zoom = Float(baseZoom(of: currentLens) * Double(device.videoZoomFactor))
         publish()
     }
 
