@@ -1,46 +1,64 @@
 import CameraCore
 import Foundation
 
-/// 执行层：把当前方案落到相机上（对焦、曝光、构图），并逐帧判定拍摄条件。
-/// 自身不做审美判断；所有硬件写入经 CaptureSession 在相机队列执行。
+/// 执行层：把意图落到相机上——镜头（LensPlanner）、全手动曝光（ExposureProgram）、
+/// 对焦、裁切（CompositionSolver + CropSpring），并逐帧给时机打分（MomentScorer）。
+/// 自身不做审美判断；所有硬件写入经 CaptureSession 在相机队列执行，连拍期间不写硬件。
 @MainActor
 final class Executor {
-    /// 竖屏主摄传感器的像素宽高比。
+    /// 竖屏传感器的像素宽高比。
     static let sensorAspect = 0.75
 
     private let capture: CaptureSession
     private(set) var plan: ShotPlan?
-    private var evaluator: TriggerEvaluator?
-    private var exposure = ExposureController()
+    private var scorer: MomentScorer?
+    private var exposure = ExposureProgram()
+    private var lenses: LensPlanner?
     private var spring = CropSpring()
     private var springReady = false
     private var lastFocus: CameraCore.NormalizedPoint?
     private var lastTime: TimeInterval?
+    private var lastZoom: Float?
     private(set) var crop: CameraCore.NormalizedRect = .full
     private(set) var placementError = 0.0
+    private(set) var exposureSettled = false
+    private(set) var lastExposure: ExposureDecision?
 
     init(capture: CaptureSession) {
         self.capture = capture
     }
 
-    var exposureSettled: Bool { exposure.settled }
+    /// 当前选择的镜头档。
+    var lens: LensStop? { lenses?.current }
 
-    func apply(_ newPlan: ShotPlan, isDefault: Bool) {
-        let previous = plan
+    func apply(_ newPlan: ShotPlan, state: CameraState, now: TimeInterval) {
         plan = newPlan
-        evaluator = TriggerEvaluator(plan: newPlan)
+        scorer = MomentScorer(plan: newPlan, startedAt: now)
         exposure.reset()
+        exposureSettled = false
         lastFocus = nil
-        // 默认方案只做辅助，不改动用户当前的光圈。
-        guard !isDefault, previous?.exposure.aperture != newPlan.exposure.aperture else { return }
-        switch newPlan.exposure.aperture.mode {
-        case .prefer: capture.setAperture(newPlan.exposure.aperture.value.map(Float.init))
-        case .auto: capture.setAperture(nil)
+        if lenses?.stops != state.lensStops { lenses = LensPlanner(stops: state.lensStops) }
+        let genreDefault = (try? Knowledge.playbook(newPlan.genre).defaultFocalLength) ?? LensStop.mainFocalLength
+        if let stop = lenses?.plan(for: newPlan.lens, genreDefault: genreDefault, planID: newPlan.id) {
+            capture.setLens(stop)
+            springReady = false
         }
+        capture.setRatio(newPlan.composition.ratio)
     }
 
-    func ingest(_ m: SceneMeasurement, state: CameraState, now: TimeInterval) -> TriggerReport? {
-        guard let plan, var evaluator else { return nil }
+    /// 新方案、冷却结束、再拍一张时重新计时耐心期。
+    func restartMoment(at now: TimeInterval) {
+        scorer?.restart(at: now)
+    }
+
+    func ingest(_ m: SceneMeasurement, state: CameraState, now: TimeInterval) -> MomentReport? {
+        guard let plan, var scorer else { return nil }
+        // 连拍期间冻结一切：曝光、对焦、裁切框都保持拍摄瞬间的状态。
+        guard !state.isBursting else { return nil }
+        if lastZoom != state.zoom {
+            lastZoom = state.zoom
+            springReady = false
+        }
         let subject = plan.subject == .none ? nil : m.primarySubject?.box
         let salient = m.subjects.first { $0.kind == .salient }?.box.center
         let target = CompositionSolver.solve(subject: subject, composition: plan.composition,
@@ -56,36 +74,48 @@ final class Executor {
         lastTime = now
         placementError = subject.map { placement(of: $0, in: crop, anchor: plan.composition.anchor) } ?? 0
 
-        if let center = subject?.center, distance(center, lastFocus) > 0.05 {
-            lastFocus = center
-            capture.setSubjectPoint(center)
+        let focusPoint = subject?.center ?? CameraCore.NormalizedPoint(x: 0.5, y: 0.5)
+        if distance(focusPoint, lastFocus) > 0.05 {
+            lastFocus = focusPoint
+            capture.setSubjectPoint(focusPoint)
         }
-        if state.canCapture {
-            let reading = ExposureState(bias: Double(state.exposureBias), shutterSeconds: state.exposureSeconds ?? 0,
-                                        shutterLocked: state.selectedShutter != nil, iso: Double(state.iso ?? 0),
-                                        minISO: Double(state.minISO), minBias: Double(state.minimumBias),
-                                        maxBias: Double(state.maximumBias))
-            switch exposure.step(m, intent: plan.exposure, state: reading) {
-            case .none: break
-            case .setBias(let value): capture.setAgentBias(value)
-            case .lockShutter(let seconds): capture.lockShutter(seconds)
-            case .releaseShutter: capture.releaseShutter()
-            }
+
+        if state.phase == .ready, !state.isCapturing, !state.isApplying {
+            let reading = ExposureReading(aperture: Double(state.aperture ?? 1.8),
+                                          shutter: state.exposureSeconds ?? 1.0 / 60,
+                                          iso: Double(state.iso ?? 100))
+            let limits = ExposureLimits(minISO: Double(state.minISO), maxISO: Double(state.maxISO),
+                                        minShutter: state.minShutter, maxShutter: state.maxShutter,
+                                        apertureStops: state.apertureRange?.stops.map(Double.init) ?? [],
+                                        variableAperture: state.supportsAperturePriority)
+            let context = ExposureContext(focalLength: Double(state.zoom) * LensStop.mainFocalLength,
+                                          deviceAngularSpeed: m.deviceAngularSpeed, subjectSpeed: m.subjectSpeed,
+                                          isNight: plan.genre == .night)
+            let decision = exposure.step(luminance: m.luminance, intent: plan.exposure, reading: reading,
+                                         limits: limits, context: context, writePending: state.agentWritePending)
+            lastExposure = decision
+            exposureSettled = decision.settled
+            if let target = decision.target { capture.setManualExposure(target) }
+            if let stop = lenses?.reportStarved(decision.starved, now: now) { capture.setLens(stop) }
         }
-        let report = evaluator.update(m, now: now, placementError: placementError, exposureSettled: exposure.settled)
-        self.evaluator = evaluator
+        let report = scorer.update(m, now: now, placementError: placementError, exposureSettled: exposureSettled)
+        self.scorer = scorer
         return report
     }
 
-    /// AI 停止：释放快门锁，回到系统自动对焦与曝光节奏；保留用户可见的光圈与 EV。
-    func stop(state: CameraState) {
-        if state.selectedShutter != nil { capture.releaseShutter() }
+    /// AI 停止：回到系统自动曝光与对焦节奏；镜头与画幅保持用户可见的状态。
+    func stop() {
+        capture.releaseManualExposure()
         plan = nil
-        evaluator = nil
+        scorer = nil
+        lenses?.reset()
         springReady = false
         crop = .full
         lastFocus = nil
         lastTime = nil
+        lastZoom = nil
+        lastExposure = nil
+        exposureSettled = false
     }
 
     private func placement(of subject: CameraCore.NormalizedRect, in crop: CameraCore.NormalizedRect,

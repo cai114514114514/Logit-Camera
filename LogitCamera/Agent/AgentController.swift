@@ -9,20 +9,23 @@ struct AgentLogEntry: Identifiable, Sendable {
     let text: String
 }
 
-/// AI 的总控：调度器（何时问模型、何时拍）+ 感知（测量）+ 执行（对焦、曝光、构图）+ 模型。
-/// 模型只给方案和评分；没有评审放行永不自动拍摄。
+/// AI 的总控：调度器（何时问云端、何时拍）+ 感知（测量）+ 执行（镜头、曝光、对焦、构图、时机）+ 模型。
+/// 云端只给意图；按快门的时机完全由本机决定，用户的快门永远可用。
 @MainActor @Observable
 final class AgentController {
     private(set) var isEnabled = false
     private(set) var phase: AgentPhase = .off
     private(set) var plan: ShotPlan?
     private(set) var isDefaultPlan = true
+    private(set) var isOffline = false
     private(set) var genreName: String?
-    private(set) var rubric: RubricResult?
+    /// 导演对最近一帧的量表点评（只用于展示）。
+    private(set) var critique: RubricResult?
     private(set) var rubricWeights: [RubricCriterion: Double] = [:]
-    private(set) var report: TriggerReport?
+    private(set) var moment: MomentReport?
     private(set) var crop: CameraCore.NormalizedRect?
     private(set) var subjectBox: CameraCore.NormalizedRect?
+    private(set) var lens: LensStop?
     /// 每次真正截取一帧发给模型时加一，驱动取景扫描线。
     private(set) var observationTick = 0
     private(set) var calls = 0
@@ -37,18 +40,19 @@ final class AgentController {
 
     /// 相机最新状态，由 CameraModel 推送。
     @ObservationIgnored var cameraState = CameraState()
-    /// 触发拍摄；返回 false 表示相机暂时不能拍。
-    @ObservationIgnored var onFire: ((CameraCore.NormalizedRect?) -> Bool)?
-    /// 新方案生效（用于把读数标为 AI 设定、同步画幅）。
+    /// 触发自动拍摄（裁切框与画幅一起冻结）；返回 false 表示相机暂时不能拍。
+    @ObservationIgnored var onFire: ((CameraCore.NormalizedRect?, FrameRatio) -> Bool)?
+    /// 新方案生效（用于把读数标为 AI 设定）。
     @ObservationIgnored var onPlanApplied: ((ShotPlan) -> Void)?
     @ObservationIgnored var demoLocked = false
 
     @ObservationIgnored private let capture: CaptureSession
     @ObservationIgnored private let perception: Perception
     @ObservationIgnored private let executor: Executor
+    /// 调度器只创建一次：请求编号跨开关单调递增，旧回复永远对不上号（审查 I7）。
     @ObservationIgnored private var scheduler: DirectorScheduler?
     @ObservationIgnored private var model: VisionModel?
-    @ObservationIgnored private var memory: JudgeMemory?
+    @ObservationIgnored private var memory: DirectorMemory?
     @ObservationIgnored private var request: Task<Void, Never>?
     @ObservationIgnored private var latest: SceneMeasurement?
     /// 感知层操作串行执行，保证 stop / start / resetBaseline 的顺序。
@@ -64,37 +68,53 @@ final class AgentController {
 
     func enable(key: String) {
         guard !demoLocked else { return }
-        do { scheduler = try DirectorScheduler.live() } catch {
-            faulted = true
-            status = "知识库加载失败"
-            return
+        if scheduler == nil {
+            do { scheduler = try DirectorScheduler.live() } catch {
+                faulted = true
+                status = "知识库加载失败"
+                return
+            }
         }
-        model = DeepSeekAdapter(key: key)
+        model = Self.makeModel(key: key)
         isEnabled = true
         faulted = false
         calls = 0
         history = []
         memory = nil
-        rubric = nil
+        critique = nil
+        latest = nil
+        moment = nil
         log("AI 开启")
         startPerception()
         handle(.start)
+    }
+
+    private static func makeModel(key: String) -> VisionModel {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-LogitOfflineDirector") { return OfflineDirector() }
+        #endif
+        return DeepSeekAdapter(key: key)
     }
 
     func stop() {
         guard isEnabled || faulted else { return }
         request?.cancel()
         request = nil
-        _ = scheduler?.handle(.stop, now: now)
+        if var scheduler {
+            _ = scheduler.handle(.stop, now: now)
+            self.scheduler = scheduler
+        }
         perceptionDo { await $0.stop() }
-        executor.stop(state: cameraState)
+        executor.stop()
         isEnabled = false
         faulted = false
+        isOffline = false
         phase = .off
         plan = nil
         crop = nil
         subjectBox = nil
-        report = nil
+        moment = nil
+        lens = nil
         status = "AI 待命"
         reason = ""
     }
@@ -117,18 +137,20 @@ final class AgentController {
     func setAutoCapture(_ enabled: Bool) { autoCaptureEnabled = enabled }
     /// 冷却中「再拍一张」。
     func rearm() { handle(.rearm) }
-    /// 就绪时点快门：本场景不再自动拍摄。
-    func disarm() { handle(.disarm) }
 
-    /// 照片已拍下（自动拍摄才计入冷却并保存拍摄依据）。
-    func captured(photoID: UUID, automatic: Bool) {
+    /// 照片已拍下（自动或手动）：立即进入冷却，避免选片期间又自动拍一组。
+    func captured(automatic: Bool) {
         guard isEnabled else { return }
-        if automatic {
-            CaptureRecordStore.append(CaptureRecord(photoID: photoID, date: Date(), plan: plan, measurement: latest,
-                                                    rubric: rubric, automatic: true))
-            log("已拍摄")
-            handle(.captured)
-        }
+        log(automatic ? "已自动拍摄" : "已拍摄")
+        handle(.captured)
+    }
+
+    /// 选片完成后记下拍摄依据（意图、测量、点评）。
+    func record(photoID: UUID, automatic: Bool) {
+        guard isEnabled || plan != nil else { return }
+        let record = CaptureRecord(photoID: photoID, date: Date(), plan: plan, measurement: latest, rubric: critique,
+                                   automatic: automatic, chosenIndex: nil)
+        Task { await CaptureRecordStore.shared.append(record) }
     }
 
     func fireRejected() { handle(.fireRejected) }
@@ -151,17 +173,15 @@ final class AgentController {
     }
 
     private func ingest(_ m: SceneMeasurement) {
-        guard isEnabled, phase != .paused else { return }
+        guard isEnabled, phase != .paused, phase != .off else { return }
         latest = m
         guard var report = executor.ingest(m, state: cameraState, now: now) else { return }
-        crop = isDefaultPlan ? nil : executor.crop
+        crop = executor.crop
         subjectBox = m.primarySubject?.box
-        if !autoCaptureEnabled {
-            // 关闭自动拍摄时仍提示「就绪」，但不触发快门，由用户自己按。
-            report = TriggerReport(statuses: report.statuses, allSatisfied: report.allSatisfied,
-                                   sustained: false, nearlyReady: report.nearlyReady)
-        }
-        self.report = report
+        lens = executor.lens
+        // 关闭自动拍摄时仍显示时机分，但不触发快门，由用户自己按。
+        if !autoCaptureEnabled { report = report.withoutFire }
+        moment = report
         handle(.measurement(m, report))
     }
 
@@ -176,51 +196,62 @@ final class AgentController {
         if output.resetMemory { memory = nil }
         if output.resetBaseline { perceptionDo { await $0.resetBaseline() } }
         sync(scheduler)
-        switch output.command {
-        case .none: break
-        case .callScout: callScout(generation: scheduler.generation)
-        case .callJudge(let mode): callJudge(mode, generation: scheduler.generation)
-        case .fire:
-            if onFire?(crop) != true { handle(.fireRejected) }
+        if output.restartMoment { executor.restartMoment(at: now) }
+        guard let id = output.requestID else {
+            if output.command == .fire { fire() }
+            return
         }
+        switch output.command {
+        case .callScout: callScout(id: id)
+        case .callDirector(let genre, let feedback): callDirector(genre, feedback: feedback, id: id)
+        case .fire: fire()
+        case .none: break
+        }
+    }
+
+    private func fire() {
+        let ratio = plan?.composition.ratio ?? cameraState.ratio
+        if onFire?(crop, ratio) != true { handle(.fireRejected) }
     }
 
     private func sync(_ scheduler: DirectorScheduler) {
         phase = scheduler.phase
+        isOffline = scheduler.isOffline
         if scheduler.phase == .off, isEnabled {
             // 不可重试的错误（密钥、额度）使调度器停止。
             isEnabled = false
             faulted = true
             status = "AI 需要检查密钥"
             perceptionDo { await $0.stop() }
-            executor.stop(state: cameraState)
+            executor.stop()
             return
         }
         if let newPlan = scheduler.plan, newPlan.id != plan?.id {
             plan = newPlan
             isDefaultPlan = scheduler.isDefaultPlan
-            executor.apply(newPlan, isDefault: isDefaultPlan)
+            executor.apply(newPlan, state: cameraState, now: now)
             let playbook = try? Knowledge.playbook(newPlan.genre)
-            genreName = isDefaultPlan ? nil : playbook?.name
+            genreName = playbook?.name
             rubricWeights = playbook?.rubricWeights ?? [:]
-            let preferred: SubjectKind? = isDefaultPlan ? nil : newPlan.subject
+            let preferred: SubjectKind? = newPlan.subject == .none ? nil : newPlan.subject
             perceptionDo { await $0.setPreferredSubject(preferred) }
-            if !isDefaultPlan {
-                onPlanApplied?(newPlan)
-                log("新方案：\(genreName ?? newPlan.genre.rawValue) · \(newPlan.rationale)")
-            }
+            onPlanApplied?(newPlan)
+            if !isDefaultPlan { log("新方案：\(genreName ?? newPlan.genre.rawValue) · \(newPlan.rationale)") }
         }
-        if !faulted { status = Self.statusText(phase) }
+        if !faulted { status = statusText() }
+    }
+
+    private func statusText() -> String {
+        if isOffline, [.composing, .planning].contains(phase) { return "离线 · 本机取景" }
+        return Self.statusText(phase)
     }
 
     static func statusText(_ phase: AgentPhase) -> String {
         switch phase {
         case .off: "AI 待命"
-        case .scouting: "侦察中"
-        case .planning: "制定方案"
-        case .tracking: "跟踪中"
-        case .reviewing: "复核中"
-        case .armed: "就绪"
+        case .scouting: "观察中"
+        case .planning: "构思中"
+        case .composing: "取景中"
         case .capturing: "拍摄中"
         case .cooldown: "已拍摄 · 场景变化后继续"
         case .paused: "已暂停"
@@ -229,83 +260,89 @@ final class AgentController {
 
     // MARK: - Model calls
 
-    private func callScout(generation: Int) {
-        guard let model else { return }
+    /// 回复必须对上当前在途的请求编号，且 AI 仍在运行，才允许修改任何状态。
+    private func isCurrent(_ id: Int) -> Bool {
+        isEnabled && scheduler?.inFlightID == id
+    }
+
+    private func callScout(id: Int) {
+        guard let model else { return failQuietly(id) }
         let plan = isDefaultPlan ? nil : self.plan
         request = Task { [weak self] in
-            guard let self, let frame = await self.frame(maxDimension: 768) else {
-                self?.handle(.requestFailed(generation: generation, retryable: true))
-                return
+            guard let self else { return }
+            guard let (frame, signature) = await self.frame(maxDimension: 768) else {
+                return self.failQuietly(id)
             }
+            guard self.isCurrent(id) else { return }
             self.observationTick += 1
             self.calls += 1
             do {
                 let result = try await model.scout(frame, plan: plan)
-                guard self.isFresh(frame) else {
+                guard self.isCurrent(id) else { return }
+                guard await self.isFresh(frame, signature: signature) else {
                     self.log("画面已变化，丢弃侦察结果")
-                    self.handle(.requestFailed(generation: generation, retryable: true))
-                    return
+                    return self.handle(.requestFailed(id: id, retryable: true, stale: true))
                 }
+                guard self.isCurrent(id) else { return }
                 self.log("侦察：\(result.genre.rawValue) · \(result.reason)")
-                self.handle(.scoutReply(generation: generation, result))
+                self.handle(.scoutReply(id: id, result))
             } catch {
-                self.fail(error, generation: generation)
+                self.fail(error, id: id)
             }
         }
     }
 
-    private func callJudge(_ mode: JudgeMode, generation: Int) {
-        guard let model else { return }
-        let genre: GenreID
-        switch mode {
-        case .plan(let g): genre = g
-        case .approve: genre = plan?.genre ?? .general
-        }
-        guard let playbook = try? Knowledge.playbook(genre) else { return }
+    private func callDirector(_ genre: GenreID, feedback: String?, id: Int) {
+        guard let model, let playbook = try? Knowledge.playbook(genre) else { return failQuietly(id) }
         let currentPlan = isDefaultPlan ? nil : plan
-        let feedback = feedbackText()
+        let text = executionFeedback(feedback)
         let memory = self.memory
         request = Task { [weak self] in
-            guard let self, let frame = await self.frame(maxDimension: 1280) else {
-                self?.handle(.requestFailed(generation: generation, retryable: true))
-                return
+            guard let self else { return }
+            guard let (frame, signature) = await self.frame(maxDimension: 1280) else {
+                return self.failQuietly(id)
             }
+            guard self.isCurrent(id) else { return }
             self.observationTick += 1
             self.calls += 1
             do {
-                let outcome = try await model.judge(frame, playbook: playbook, plan: currentPlan, memory: memory, feedback: feedback)
-                guard self.isFresh(frame) else {
-                    self.log("画面已变化，丢弃评审结果")
-                    self.handle(.requestFailed(generation: generation, retryable: true))
-                    return
+                let outcome = try await model.direct(frame, playbook: playbook, plan: currentPlan, memory: memory, feedback: text)
+                guard self.isCurrent(id) else { return }
+                guard await self.isFresh(frame, signature: signature) else {
+                    self.log("画面已变化，丢弃导演方案")
+                    return self.handle(.requestFailed(id: id, retryable: true, stale: true))
                 }
+                guard self.isCurrent(id) else { return }
                 self.memory = outcome.memory
-                switch outcome.result {
-                case .setPlan(let plan, let rubric):
-                    self.rubric = rubric
-                    self.reason = plan.rationale
-                case .keepPlan(let rubric, let reason):
-                    self.rubric = rubric
-                    self.reason = reason
-                }
-                if let rubric = self.rubric {
-                    self.log(String(format: "评审：%.1f 分 · %@", rubric.weighted(playbook.rubricWeights), self.reason))
-                }
-                self.handle(.judgeReply(generation: generation, outcome.result))
+                self.critique = outcome.critique
+                self.reason = outcome.plan.rationale
+                self.log(String(format: "点评：%.1f 分", outcome.critique.weighted(playbook.rubricWeights)))
+                self.handle(.directorReply(id: id, .plan(outcome.plan, outcome.critique)))
+            } catch ModelError.invalidPlan(let detail) {
+                guard self.isCurrent(id) else { return }
+                self.log("方案未通过校验：\(detail)")
+                self.handle(.directorReply(id: id, .invalid(detail)))
             } catch {
-                self.fail(error, generation: generation)
+                self.fail(error, id: id)
             }
         }
     }
 
-    private func fail(_ error: Error, generation: Int) {
+    /// 早返回也必须释放在途请求，否则调度器会一直等下去。
+    private func failQuietly(_ id: Int) {
+        guard isCurrent(id) else { return }
+        handle(.requestFailed(id: id, retryable: true, stale: true))
+    }
+
+    private func fail(_ error: Error, id: Int) {
         if error is CancellationError { return }
+        guard isCurrent(id) else { return }
         let modelError = error as? ModelError
         let retryable = modelError?.isRetryable ?? true
         reason = (error as? LocalizedError)?.errorDescription ?? describe(modelError)
         log("请求失败：\(reason)")
         faulted = !retryable
-        handle(.requestFailed(generation: generation, retryable: retryable))
+        handle(.requestFailed(id: id, retryable: retryable, stale: false))
         if !retryable {
             status = "AI 需要检查密钥"
             reason = "密钥无效或账户额度不足，请检查 AI 设置。"
@@ -324,8 +361,8 @@ final class AgentController {
         }
     }
 
-    /// 发给模型的一帧：直立 JPEG + 最新测量 + 设备能力。
-    private func frame(maxDimension: CGFloat) async -> ModelFrame? {
+    /// 发给模型的一帧：直立 JPEG + 最新测量 + 设备能力。截图在后台完成。
+    private func frame(maxDimension: CGFloat) async -> (ModelFrame, [UInt8])? {
         // 刚开启时感知层可能还没有第一帧测量：最多等 1 秒。
         for _ in 0..<20 where latest == nil { try? await Task.sleep(for: .milliseconds(50)) }
         let frames = capture.frames
@@ -333,27 +370,29 @@ final class AgentController {
               let snapshot = await Task.detached(priority: .userInitiated, operation: {
                   try? frames.snapshot(maxDimension: maxDimension)
               }).value else { return nil }
-        requestSignature = snapshot.signature
-        return ModelFrame(jpeg: snapshot.jpeg, measurement: measurement, limits: limits, timestamp: snapshot.timestamp)
+        return (ModelFrame(jpeg: snapshot.jpeg, measurement: measurement, limits: limits, timestamp: snapshot.timestamp),
+                snapshot.signature)
     }
 
-    @ObservationIgnored private var requestSignature: [UInt8]?
-
-    /// 过期丢弃：响应对应的帧超过 12 秒，或画面已明显变化。
-    private func isFresh(_ frame: ModelFrame) -> Bool {
+    /// 过期丢弃：响应对应的帧超过 12 秒，或画面已明显变化。签名在后台计算，不占主线程。
+    private func isFresh(_ frame: ModelFrame, signature: [UInt8]) async -> Bool {
         guard now - frame.timestamp <= 12 else { return false }
-        guard let before = requestSignature, let current = try? capture.frames.snapshot(maxDimension: 64) else { return true }
-        return MeasurementMath.sceneChange(before, current.signature) <= DirectorScheduler.sceneChangeThreshold
+        let frames = capture.frames
+        let current = await Task.detached(priority: .utility) { try? frames.snapshot(maxDimension: 64).signature }.value
+        guard let current else { return true }
+        return MeasurementMath.sceneChange(signature, current) <= DirectorScheduler.sceneChangeThreshold
     }
 
-    /// 给评审的本地执行反馈：条件状态与曝光是否收敛。
-    private func feedbackText() -> String {
-        guard let report else { return "" }
-        let items = report.statuses.map { status -> String in
-            let threshold = status.trigger.threshold.map { String(format: "%.2f", $0) } ?? ""
-            return "\(status.trigger.kind.rawValue)\(threshold.isEmpty ? "" : "(\(threshold))") \(status.satisfied ? "满足" : "未满足")"
+    /// 给导演的本机反馈：上一次方案的校验错误，加上执行情况。
+    private func executionFeedback(_ validation: String?) -> String {
+        var parts: [String] = []
+        if let validation { parts.append("上一次方案未通过校验：\(validation)。请修正后重新给出完整方案。") }
+        if let lens = executor.lens { parts.append("当前镜头 \(Int(lens.focalLength))mm") }
+        if let decision = executor.lastExposure {
+            parts.append(decision.starved ? "光线不足（ISO 已到上限）" : (decision.settled ? "曝光已收敛" : "曝光调整中"))
         }
-        return "拍摄条件：" + items.joined(separator: "，") + (executor.exposureSettled ? "；曝光已收敛" : "；曝光调整中")
+        if let moment { parts.append(String(format: "时机分 %.2f", moment.score)) }
+        return parts.joined(separator: "；")
     }
 
     private func log(_ text: String) {
@@ -363,6 +402,11 @@ final class AgentController {
     }
 
     #if DEBUG
+    func showDiagnostics(_ text: String) {
+        demoLocked = true
+        diagnostics = text
+    }
+
     /// 只运行感知层（不调用模型、不改硬件），在取景上显示测量与耗时，用于真机检查。
     func startPerceptionProbe() {
         demoLocked = true
@@ -400,23 +444,25 @@ final class AgentController {
     }
 
     /// 演示模式：直接设置展示字段，不启动调度器、感知与网络。
-    func setDemo(phase: AgentPhase, plan: ShotPlan?, genreName: String?, rubric: RubricResult?,
-                 report: TriggerReport?, crop: CameraCore.NormalizedRect?, subject: CameraCore.NormalizedRect?,
-                 reason: String, faulted: Bool = false, tick: Bool = false) {
+    func setDemo(phase: AgentPhase, plan: ShotPlan?, genreName: String?, critique: RubricResult?,
+                 moment: MomentReport?, crop: CameraCore.NormalizedRect?, subject: CameraCore.NormalizedRect?,
+                 lens: LensStop? = nil, reason: String, faulted: Bool = false, offline: Bool = false, tick: Bool = false) {
         demoLocked = true
         isEnabled = phase != .off
         self.phase = phase
         self.plan = plan
         isDefaultPlan = plan == nil
+        isOffline = offline
         self.genreName = genreName
-        self.rubric = rubric
+        self.critique = critique
         rubricWeights = plan.flatMap { try? Knowledge.playbook($0.genre).rubricWeights } ?? [:]
-        self.report = report
+        self.moment = moment
         self.crop = crop
+        self.lens = lens
         subjectBox = subject
         self.reason = reason
         self.faulted = faulted
-        status = faulted ? "AI 需要检查密钥" : Self.statusText(phase)
+        status = faulted ? "AI 需要检查密钥" : statusText()
         if tick { observationTick += 1; calls += 1 }
         if let plan, history.isEmpty { history = [AgentLogEntry(date: Date(), text: "新方案：\(genreName ?? "") · \(plan.rationale)")] }
     }
