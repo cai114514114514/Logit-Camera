@@ -52,8 +52,7 @@ extension CaptureSession {
                     }
                 }
                 if let aperture, self.state.supportsAperturePriority,
-                   format.supportsExposureModeCustom(lensAperture: aperture, duration: duration, iso: iso) {
-                    device.setExposureModeCustom(lensAperture: aperture, duration: duration, iso: iso, completionHandler: done)
+                   ApertureSupport.setManual(device, aperture: aperture, duration: duration, iso: iso, completion: done) {
                     self.state.selectedAperture = aperture
                 } else if device.isExposureModeSupported(.custom) {
                     device.setExposureModeCustom(duration: duration, iso: iso, completionHandler: done)

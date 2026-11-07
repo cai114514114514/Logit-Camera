@@ -23,11 +23,8 @@ extension CaptureSession {
         if let aperture {
             guard state.supportsAperturePriority,
                   state.apertureRange?.contains(aperture) == true,
-                  device.activeFormat.supportsExposureModeCustom(
-                    lensAperture: aperture,
-                    duration: AVCaptureDevice.autoExposureDuration,
-                    iso: AVCaptureDevice.autoISO
-                  ) else { throw CameraFailure.unsupportedAperture }
+                  ApertureSupport.supportsPriority(device, aperture: aperture)
+            else { throw CameraFailure.unsupportedAperture }
         } else {
             guard device.isExposureModeSupported(.continuousAutoExposure)
             else { throw CameraFailure.configuration }
@@ -40,17 +37,17 @@ extension CaptureSession {
         if let aperture {
             state.isApplying = true
             publish()
-            device.setExposureModeCustom(
-                lensAperture: aperture,
-                duration: AVCaptureDevice.autoExposureDuration,
-                iso: AVCaptureDevice.autoISO
-            ) { [weak self] _ in
+            let applied = ApertureSupport.setPriority(device, aperture: aperture) { [weak self] _ in
                 guard let self else { return }
                 self.queue.async {
                     guard revision == self.exposureRevision else { return }
                     self.state.isApplying = false
                     self.readExposure()
                 }
+            }
+            if !applied {
+                state.isApplying = false
+                throw CameraFailure.unsupportedAperture
             }
         } else {
             device.exposureMode = .continuousAutoExposure

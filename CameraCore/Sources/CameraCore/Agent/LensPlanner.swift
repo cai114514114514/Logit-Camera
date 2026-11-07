@@ -52,11 +52,17 @@ public struct LensStop: Codable, Sendable, Equatable, Hashable {
             result.append(LensStop(focalLength: focal, zoomFactor: zoom, lens: .ultraWide))
         }
         result.append(LensStop(focalLength: main, zoomFactor: 1, lens: .wide))
-        result.append(LensStop(focalLength: main * 2, zoomFactor: 2, lens: .wide))
+        var tele: Double?
         let teleIndex = hasUltraWide ? 1 : 0
         if hasTele, switchOver.count > teleIndex, mainDisplay > 0 {
-            let display = switchOver[teleIndex] * displayMultiplier / mainDisplay
-            if display > 2.05 {
+            tele = switchOver[teleIndex] * displayMultiplier / mainDisplay
+        }
+        if let display = tele, abs(display - 2) <= 0.1 {
+            // 2× 光学长焦（如 iPhone 12 Pro）：用长焦代替主摄 2× 裁切。
+            result.append(LensStop(focalLength: main * 2, zoomFactor: 2, lens: .telephoto))
+        } else {
+            result.append(LensStop(focalLength: main * 2, zoomFactor: 2, lens: .wide))
+            if let display = tele, display > 2.1 {
                 result.append(LensStop(focalLength: (main * display).rounded(), zoomFactor: display, lens: .telephoto))
             }
         }

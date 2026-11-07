@@ -103,12 +103,8 @@ extension CaptureSession {
         case .wide: "主摄"
         case .telephoto: "长焦"
         }
-        state.apertureRange = ApertureRange(minimum: format.minLensAperture, maximum: format.maxLensAperture,
-                                            stops: format.recommendedLensApertureStops)
-        state.supportsAperturePriority = state.apertureRange?.isVariable == true
-            && format.supportsExposureModeCustom(lensAperture: AVCaptureDevice.currentLensAperture,
-                                                 duration: AVCaptureDevice.autoExposureDuration,
-                                                 iso: AVCaptureDevice.autoISO)
+        state.apertureRange = ApertureSupport.range(for: camera)
+        state.supportsAperturePriority = ApertureSupport.supportsPriority(camera, range: state.apertureRange)
         state.minISO = format.minISO
         state.maxISO = format.maxISO
         state.minShutter = format.minExposureDuration.seconds

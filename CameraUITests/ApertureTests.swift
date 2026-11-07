@@ -12,7 +12,10 @@ final class ApertureTests: XCTestCase {
         if banner.exists { XCTAssertTrue(banner.waitForNonExistence(timeout: 15)) }
         app.buttons["camera.controls"].tap()
         let narrow = app.buttons["aperture.4.0"]
-        XCTAssertTrue(narrow.waitForExistence(timeout: 15), "Run on an unlocked iPhone 18 Pro Max with camera access allowed.")
+        // 可变光圈只在 iOS 27 + iPhone 18 Pro 系列主摄上可用；其他设备跳过。
+        guard narrow.waitForExistence(timeout: 15) else {
+            throw XCTSkip("当前设备或系统不支持可变光圈（需要 iOS 27 与 iPhone 18 Pro 系列）。")
+        }
         XCTAssertTrue(narrow.isEnabled)
 
         narrow.tap()

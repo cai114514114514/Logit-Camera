@@ -14,6 +14,27 @@ private let wideStops = [LensStop(focalLength: 13, zoomFactor: 0.5, lens: .ultra
     #expect(deviceStops.map(\.lens) == [.ultraWide, .wide, .wide, .telephoto])
 }
 
+/// iPhone 12 Pro：超广角 + 主摄 + 2× 长焦（虚拟设备 switch-over [2, 4]，显示倍率 0.5）。
+@Test func twoTimesTelephotoReplacesMainCrop() {
+    let stops = LensStop.stops(switchOver: [2, 4], displayMultiplier: 0.5, hasUltraWide: true, hasTele: true)
+    #expect(stops.map(\.zoomFactor) == [0.5, 1, 2])
+    #expect(stops.map(\.lens) == [.ultraWide, .wide, .telephoto])
+}
+
+/// iPhone 12 Pro Max：2.5× 长焦，保留主摄 2× 裁切。
+@Test func twoAndHalfTelephotoKeepsMainCrop() {
+    let stops = LensStop.stops(switchOver: [2, 5], displayMultiplier: 0.5, hasUltraWide: true, hasTele: true)
+    #expect(stops.map(\.zoomFactor) == [0.5, 1, 2, 2.5])
+    #expect(stops.map(\.focalLength) == [13, 24, 48, 60])
+}
+
+/// iPhone 12 / 13 / 14 / 15 / 16（非 Pro）：超广角 + 主摄。
+@Test func dualWideHasNoTelephoto() {
+    let stops = LensStop.stops(switchOver: [2], displayMultiplier: 0.5, hasUltraWide: true, hasTele: false)
+    #expect(stops.map(\.zoomFactor) == [0.5, 1, 2])
+    #expect(stops.map(\.lens) == [.ultraWide, .wide, .wide])
+}
+
 @Test func stopsWithoutTripleCamera() {
     let stops = LensStop.stops(switchOver: [], displayMultiplier: 1, hasUltraWide: false, hasTele: false)
     #expect(stops.map(\.focalLength) == [24, 48])

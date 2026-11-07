@@ -22,24 +22,12 @@ extension CaptureSession {
 
     private func cameraLimits(_ device: AVCaptureDevice) -> CameraLimits {
         let format = device.activeFormat
-        var modes: [ExposureModeSupport] = []
-        for apertureAuto in [false, true] {
-            for shutterAuto in [false, true] {
-                for isoAuto in [false, true] {
-                    let allAuto = apertureAuto && shutterAuto && isoAuto
-                    let supported = allAuto ? device.isExposureModeSupported(.continuousAutoExposure)
-                        : format.supportsExposureModeCustom(
-                            lensAperture: apertureAuto ? AVCaptureDevice.autoLensAperture : AVCaptureDevice.currentLensAperture,
-                            duration: shutterAuto ? AVCaptureDevice.autoExposureDuration : AVCaptureDevice.currentExposureDuration,
-                            iso: isoAuto ? AVCaptureDevice.autoISO : AVCaptureDevice.currentISO
-                        )
-                    if supported { modes.append(ExposureModeSupport(apertureAuto: apertureAuto, shutterAuto: shutterAuto, isoAuto: isoAuto)) }
-                }
-            }
-        }
+        let modes = ApertureSupport.exposureModes(device)
+        let aperture = ApertureSupport.range(for: device)
         return CameraLimits(
-            minAperture: Double(format.minLensAperture), maxAperture: Double(format.maxLensAperture),
-            apertureStops: format.recommendedLensApertureStops.map(Double.init),
+            minAperture: Double(aperture?.minimum ?? device.lensAperture),
+            maxAperture: Double(aperture?.maximum ?? device.lensAperture),
+            apertureStops: aperture?.stops.map(Double.init) ?? [],
             minISO: Double(format.minISO), maxISO: Double(format.maxISO),
             minShutter: format.minExposureDuration.seconds, maxShutter: format.maxExposureDuration.seconds,
             minZoom: Double(state.minZoom), maxZoom: Double(state.maxZoom),
