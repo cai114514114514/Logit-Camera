@@ -55,7 +55,8 @@ let evalLimits = CameraLimits(
     minISO: 50, maxISO: 6400, minShutter: 1.0 / 8000, maxShutter: 1.0,
     minZoom: 1, maxZoom: 3, minBias: -2, maxBias: 2,
     exposureModes: [ExposureModeSupport(apertureAuto: true, shutterAuto: true, isoAuto: true),
-                    ExposureModeSupport(apertureAuto: false, shutterAuto: true, isoAuto: true)])
+                    ExposureModeSupport(apertureAuto: false, shutterAuto: true, isoAuto: true)],
+    lensStops: [13, 24, 48, 96])
 
 func evalFrame(_ loaded: ImageLoading.Loaded) -> ModelFrame {
     let luma = loaded.luma

@@ -79,17 +79,19 @@
       "minCropArea": 0.25,
       "levelHorizon": false
     },
+    "lens": {
+      "focalLength": 24
+    },
     "exposure": {
       "meter": "highlights",
       "subjectEV": 0.0,
       "highlightClipMax": 0.02,
-      "aperture": {
-        "mode": "auto"
-      },
-      "shutterFloor": 0.004,
-      "isoCeiling": 3200
+      "motion": "freeze",
+      "depth": "normal",
+      "shutterFloor": 0,
+      "isoCeiling": 0
     },
-    "triggers": [
+    "moment": [
       {
         "kind": "subjectSharp",
         "threshold": 0.45

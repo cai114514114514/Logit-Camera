@@ -1,0 +1,73 @@
+import Foundation
+import Testing
+@testable import CameraCore
+
+private let deviceStops = LensStop.stops(switchOver: [2, 8], displayMultiplier: 0.5, hasUltraWide: true, hasTele: true)
+private let wideStops = [LensStop(focalLength: 13, zoomFactor: 0.5, lens: .ultraWide),
+                         LensStop(focalLength: 24, zoomFactor: 1, lens: .wide),
+                         LensStop(focalLength: 48, zoomFactor: 2, lens: .wide),
+                         LensStop(focalLength: 120, zoomFactor: 5, lens: .telephoto)]
+
+@Test func stopsFromTripleCamera() {
+    #expect(deviceStops.map(\.focalLength) == [13, 24, 48, 96])
+    #expect(deviceStops.map(\.zoomFactor) == [0.5, 1, 2, 4])
+    #expect(deviceStops.map(\.lens) == [.ultraWide, .wide, .wide, .telephoto])
+}
+
+@Test func stopsWithoutTripleCamera() {
+    let stops = LensStop.stops(switchOver: [], displayMultiplier: 1, hasUltraWide: false, hasTele: false)
+    #expect(stops.map(\.focalLength) == [24, 48])
+}
+
+@Test func snapsByLogDistance() {
+    #expect(LensPlanner.nearest(35, in: wideStops)?.focalLength == 24)
+    #expect(LensPlanner.nearest(40, in: wideStops)?.focalLength == 48)
+    #expect(LensPlanner.nearest(100, in: wideStops)?.focalLength == 120)
+}
+
+@Test func zeroUsesGenreDefault() {
+    var planner = LensPlanner(stops: wideStops)
+    #expect(planner.plan(for: LensIntent(focalLength: 0), genreDefault: 48, planID: UUID())?.focalLength == 48)
+}
+
+@Test func samePlanDoesNotSwitchAgain() {
+    var planner = LensPlanner(stops: wideStops)
+    let id = UUID()
+    #expect(planner.plan(for: LensIntent(focalLength: 120), genreDefault: 24, planID: id)?.focalLength == 120)
+    #expect(planner.plan(for: LensIntent(focalLength: 13), genreDefault: 24, planID: id) == nil)
+}
+
+@Test func starvationFallsBackToMainOnce() {
+    var planner = LensPlanner(stops: wideStops)
+    let id = UUID()
+    _ = planner.plan(for: LensIntent(focalLength: 120), genreDefault: 24, planID: id)
+    #expect(planner.reportStarved(true, now: 0) == nil)
+    #expect(planner.reportStarved(true, now: 0.5) == nil)
+    #expect(planner.reportStarved(true, now: 1.0)?.focalLength == 24)
+    #expect(planner.plan(for: LensIntent(focalLength: 120), genreDefault: 24, planID: id) == nil)
+    #expect(planner.reportStarved(true, now: 3) == nil)
+    #expect(planner.current?.focalLength == 24)
+}
+
+@Test func starvationResetsWhenLightReturns() {
+    var planner = LensPlanner(stops: wideStops)
+    _ = planner.plan(for: LensIntent(focalLength: 120), genreDefault: 24, planID: UUID())
+    _ = planner.reportStarved(true, now: 0)
+    _ = planner.reportStarved(false, now: 0.6)
+    #expect(planner.reportStarved(true, now: 1.0) == nil)
+}
+
+@Test func starvationOnMainDoesNothing() {
+    var planner = LensPlanner(stops: wideStops)
+    _ = planner.plan(for: LensIntent(focalLength: 24), genreDefault: 24, planID: UUID())
+    #expect(planner.reportStarved(true, now: 0) == nil)
+    #expect(planner.reportStarved(true, now: 5) == nil)
+}
+
+@Test func newPlanClearsFallback() {
+    var planner = LensPlanner(stops: wideStops)
+    _ = planner.plan(for: LensIntent(focalLength: 120), genreDefault: 24, planID: UUID())
+    _ = planner.reportStarved(true, now: 0)
+    _ = planner.reportStarved(true, now: 1)
+    #expect(planner.plan(for: LensIntent(focalLength: 120), genreDefault: 24, planID: UUID())?.focalLength == 120)
+}

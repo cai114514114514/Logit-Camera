@@ -13,11 +13,18 @@ import Testing
     }
 }
 
-@Test func defaultPlansValidate() throws {
+@Test func everyDefaultPlanIsV2AndValid() throws {
+    let focal: [GenreID: Double] = [.portrait: 48, .still: 48, .food: 48, .group: 24, .street: 24, .landscape: 24,
+                                    .night: 24, .document: 24, .general: 24, .architecture: 13, .animal: 96]
     for playbook in try Knowledge.allPlaybooks() {
         #expect(playbook.defaultPlan.genre == playbook.id)
         try playbook.defaultPlan.validate(against: typicalLimits)
+        #expect(playbook.defaultFocalLength == focal[playbook.id], "\(playbook.id)")
     }
+    #expect(try Knowledge.playbook(.portrait).defaultPlan.exposure.motion == .freeze)
+    #expect(try Knowledge.playbook(.portrait).defaultPlan.exposure.depth == .shallow)
+    #expect(try Knowledge.playbook(.landscape).defaultPlan.exposure.depth == .deep)
+    #expect(try Knowledge.playbook(.night).defaultPlan.exposure.isoCeiling == 6400)
 }
 
 @Test func everyGenreHasPrinciples() throws {
@@ -43,8 +50,8 @@ import Testing
 }
 
 @Test func promptsExistAndMentionTools() throws {
-    #expect(try Knowledge.prompt(.judge).contains("set_plan"))
-    #expect(try Knowledge.prompt(.judge).contains("keep_plan"))
+    #expect(try Knowledge.prompt(.director).contains("set_plan"))
+    #expect(try !Knowledge.prompt(.director).contains("keep_plan"))
     #expect(try Knowledge.prompt(.scout).contains("classify_scene"))
     #expect(try !Knowledge.prompt(.system).isEmpty)
 }

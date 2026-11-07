@@ -26,10 +26,13 @@ public struct GenrePlaybook: Codable, Sendable, Equatable {
     public var genreCriterion: RubricAnchor
     public var defaultPlan: ShotPlan
     public var spaqCategories: [String]
+
+    /// 题材默认焦段（等效 mm）。
+    public var defaultFocalLength: Double { defaultPlan.lens.focalLength }
 }
 
 public enum PromptName: String, Sendable, CaseIterable {
-    case system, scout, judge
+    case system, scout, director
 }
 
 public enum KnowledgeError: Error, Equatable {

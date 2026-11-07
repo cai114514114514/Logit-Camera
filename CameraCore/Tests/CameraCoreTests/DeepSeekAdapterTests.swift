@@ -46,16 +46,15 @@ private let scoutArgs: JSONValue = .object([
     "planStillValid": .bool(false), "subjectHint": .string("face"), "reason": .string("一张人脸占主导")
 ])
 
-private func rubricArgs(_ score: Double = 3, verdict: String = "approve") -> JSONValue {
+private func critiqueArgs(_ score: Double = 3) -> JSONValue {
     var object: [String: JSONValue] = [:]
     for criterion in RubricCriterion.allCases {
         object[criterion.rawValue] = .object(["score": .number(score), "evidence": .string("clipHigh=0.004")])
     }
-    object["verdict"] = .string(verdict)
     return .object(object)
 }
 
-private func planArgs(aperture: Double = 0, minCrop: Double = 0.25) -> JSONValue {
+private func planArgs(focal: Double = 48, faceToward: Double = 25, minCrop: Double = 0.25) -> JSONValue {
     .object([
         "genre": .string("portrait"), "genreConfidence": .number(0.9), "subject": .string("face"),
         "composition": .object([
@@ -63,17 +62,22 @@ private func planArgs(aperture: Double = 0, minCrop: Double = 0.25) -> JSONValue
             "subjectSize": .object(["min": .number(0.15), "max": .number(0.25)]),
             "minCropArea": .number(minCrop), "levelHorizon": .bool(false)
         ]),
+        "lens": .object(["focalLength": .number(focal)]),
         "exposure": .object([
             "meter": .string("subject"), "subjectEV": .number(0.5), "highlightClipMax": .number(0.01),
-            "aperture": .object(["mode": .string(aperture == 0 ? "auto" : "prefer"), "value": .number(aperture)]),
-            "shutterFloor": .number(0.008), "isoCeiling": .number(0)
+            "motion": .string("freeze"), "depth": .string("shallow"),
+            "shutterFloor": .number(0), "isoCeiling": .number(0)
         ]),
-        "triggers": .array([
+        "moment": .array([
             .object(["kind": .string("eyesOpen"), "threshold": .number(0.6)]),
-            .object(["kind": .string("exposureSettled"), "threshold": .number(0)])
+            .object(["kind": .string("faceToward"), "threshold": .number(faceToward)])
         ]),
         "holdMs": .number(200), "rationale": .string("脸朝左，主体放右侧")
     ])
+}
+
+private func setPlan(_ plan: JSONValue = planArgs(), critique: JSONValue = critiqueArgs()) -> (String, JSONValue) {
+    ("set_plan", .object(["plan": plan, "critique": critique]))
 }
 
 private let frame = ModelFrame(jpeg: Data([0xFF, 0xD8, 0xFF]), measurement: sampleMeasurement(subjects: [face()], primary: 1),
@@ -97,9 +101,9 @@ private func portrait() throws -> GenrePlaybook { try Knowledge.playbook(.portra
     #expect(body.allImageDetails == ["low"])
 }
 
-@Test func judgeRequestEnablesThinkingAndOriginalDetail() async throws {
-    let transport = StubTransport([(200, completion([("set_plan", .object(["plan": planArgs(), "rubric": rubricArgs()]))]))])
-    _ = try await adapter(transport).judge(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
+@Test func directorRequestEnablesThinkingAndOriginalDetail() async throws {
+    let transport = StubTransport([(200, completion([setPlan()]))])
+    _ = try await adapter(transport).direct(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
     let body = try transport.body(0)
     #expect(body["thinking"]?["type"] == .string("enabled"))
     #expect(body["reasoning_effort"] == .string("high"))
@@ -107,20 +111,46 @@ private func portrait() throws -> GenrePlaybook { try Knowledge.playbook(.portra
 }
 
 @Test func toolsAreStrictWithNoAdditionalProperties() throws {
-    for tool in ToolSchemas.scoutTools + ToolSchemas.judgeTools {
+    for tool in ToolSchemas.scoutTools + ToolSchemas.directorTools(limits: typicalLimits) {
         #expect(tool["function"]?["strict"] == .bool(true))
         try SchemaLint.checkStrict(tool["function"]?["parameters"] ?? .null)
     }
 }
 
 @Test func schemasAvoidUnsupportedKeywords() throws {
-    for tool in ToolSchemas.scoutTools + ToolSchemas.judgeTools {
+    for tool in ToolSchemas.scoutTools + ToolSchemas.directorTools(limits: typicalLimits) {
         let keys = tool.allKeys
         for forbidden in ["minLength", "maxLength", "minItems", "maxItems"] {
             #expect(!keys.contains(forbidden))
         }
         #expect(!tool.containsTypeNull)
     }
+}
+
+@Test func directorToolHasOnlySetPlan() {
+    let tools = ToolSchemas.directorTools(limits: typicalLimits)
+    #expect(tools.count == 1)
+    #expect(tools[0]["function"]?["name"] == .string("set_plan"))
+}
+
+@Test func momentThresholdDescriptionsListPerKindRanges() throws {
+    let plan = ToolSchemas.plan(limits: typicalLimits)
+    let description = plan["properties"]?["moment"]?["items"]?["properties"]?["threshold"]?["description"]?.stringValue ?? ""
+    #expect(description.contains("faceToward 0–45"))
+    #expect(description.contains("highlightsSafe 0–0.05"))
+    #expect(description.contains("deviceStill 0–2"))
+}
+
+@Test func focalLengthDescribesDeviceStops() {
+    let plan = ToolSchemas.plan(limits: typicalLimits)
+    let description = plan["properties"]?["lens"]?["properties"]?["focalLength"]?["description"]?.stringValue ?? ""
+    #expect(description.contains("13/24/48/120"))
+}
+
+@Test func critiqueHasNoVerdict() {
+    let critique = ToolSchemas.setPlan(limits: nil)["properties"]?["critique"]
+    #expect(critique?["properties"]?["verdict"] == nil)
+    #expect(critique?["properties"]?["clarity"] != nil)
 }
 
 @Test func imageOnlyInUserMessage() async throws {
@@ -131,14 +161,14 @@ private func portrait() throws -> GenrePlaybook { try Knowledge.playbook(.portra
     }
 }
 
-@Test func judgeMemoryEchoesReasoningContent() async throws {
+@Test func directorMemoryEchoesReasoningContent() async throws {
     let transport = StubTransport([
-        (200, completion([("set_plan", .object(["plan": planArgs(), "rubric": rubricArgs(2, verdict: "wait")]))], reasoning: "思考A")),
-        (200, completion([("keep_plan", .object(["rubric": rubricArgs(), "reason": .string("好")]))], reasoning: "思考B"))
+        (200, completion([setPlan(critique: critiqueArgs(2))], reasoning: "思考A")),
+        (200, completion([setPlan()], reasoning: "思考B"))
     ])
     let model = adapter(transport)
-    let first = try await model.judge(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
-    _ = try await model.judge(frame, playbook: try portrait(), plan: nil, memory: first.memory, feedback: "眼睛已睁开")
+    let first = try await model.direct(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
+    _ = try await model.direct(frame, playbook: try portrait(), plan: first.plan, memory: first.memory, feedback: "眼睛已睁开")
     let messages = try transport.body(1)["messages"]?.arrayValue ?? []
     let assistant = messages.first { $0["role"] == .string("assistant") }
     #expect(assistant?["reasoning_content"] == .string("思考A"))
@@ -148,24 +178,40 @@ private func portrait() throws -> GenrePlaybook { try Knowledge.playbook(.portra
     #expect(messages.filter { $0.allImageDetails.count > 0 }.count == 1)
 }
 
-@Test func parsesSetPlan() async throws {
-    let transport = StubTransport([(200, completion([("set_plan", .object(["plan": planArgs(aperture: 2.0), "rubric": rubricArgs()]))]))])
-    let outcome = try await adapter(transport).judge(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
-    guard case .setPlan(let plan, let rubric) = outcome.result else { Issue.record("expected set_plan"); return }
-    #expect(plan.composition.anchor == NormalizedPoint(x: 0.33, y: 0.36))
-    #expect(plan.exposure.aperture == ApertureIntent(mode: .prefer, value: 2.0))
-    #expect(plan.exposure.shutterFloor == 0.008)
-    #expect(plan.exposure.isoCeiling == nil)
-    #expect(plan.triggers == [.eyesOpen(min: 0.6), .exposureSettled])
-    #expect(rubric.scores.count == 7)
-    #expect(rubric.modelVerdict == .approve)
+@Test func parsesSetPlanIntoOutcome() async throws {
+    let transport = StubTransport([(200, completion([setPlan()]))])
+    let outcome = try await adapter(transport).direct(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
+    #expect(outcome.plan.composition.anchor == NormalizedPoint(x: 0.33, y: 0.36))
+    #expect(outcome.plan.lens.focalLength == 48)
+    #expect(outcome.plan.exposure.motion == .freeze)
+    #expect(outcome.plan.exposure.shutterFloor == 0)
+    #expect(outcome.plan.moment == [.eyesOpen(min: 0.6), .faceToward(maxYaw: 25)])
+    #expect(outcome.critique.scores.count == 7)
+    #expect(outcome.critique.modelVerdict == nil)
+    #expect(outcome.usage == TokenUsage(prompt: 1200, completion: 300))
 }
 
-@Test func parsesKeepPlan() async throws {
-    let transport = StubTransport([(200, completion([("keep_plan", .object(["rubric": rubricArgs(4, verdict: "wait"), "reason": .string("等转头")]))]))])
-    let outcome = try await adapter(transport).judge(frame, playbook: try portrait(), plan: samplePlan(), memory: nil, feedback: "")
-    #expect(outcome.result == .keepPlan(RubricResult(scores: RubricCriterion.allCases.map {
-        RubricScore(criterion: $0, score: 4, evidence: "clipHigh=0.004") }, modelVerdict: .wait), reason: "等转头"))
+@Test func invalidPlanThrowsWithFieldText() async throws {
+    let wrong = completion([setPlan(planArgs(focal: 250))])
+    await #expect {
+        try await adapter(StubTransport([(200, wrong)])).direct(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
+    } throws: { error in
+        guard case .invalidPlan(let text) = error as? ModelError else { return false }
+        return text.contains("lens.focalLength")
+    }
+}
+
+@Test func directorPromptStatesNoGate() throws {
+    let prompt = try PromptBuilder.directorSystem(playbook: try portrait(), plan: nil, feedback: "超出范围：moment[1]")
+    #expect(prompt.contains("你不决定是否按快门") || prompt.contains("也不决定是否按快门"))
+    #expect(prompt.contains("超出范围：moment[1]"))
+    #expect(!prompt.contains("keep_plan"))
+}
+
+@Test func measurementTextIncludesLensStops() {
+    let text = PromptBuilder.measurementText(frame)
+    #expect(text.contains("lensStopsMM"))
+    #expect(text.contains("120"))
 }
 
 @Test func malformedRepliesAreFailures() async throws {
@@ -182,12 +228,8 @@ private func portrait() throws -> GenrePlaybook { try Knowledge.playbook(.portra
     await #expect(throws: ModelError.self) {
         try await adapter(StubTransport([(200, completion([("classify_scene", .object(extra))]))])).scout(frame, plan: nil)
     }
-    let badPlan = completion([("set_plan", .object(["plan": planArgs(aperture: 9), "rubric": rubricArgs()]))])
-    await #expect(throws: ModelError.invalidPlan("unsupportedAperture")) {
-        try await adapter(StubTransport([(200, badPlan)])).judge(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
-    }
-    let wrongTool = completion([("keep_plan", .object(["rubric": rubricArgs(), "reason": .string("")]))])
-    await #expect(throws: ModelError.unexpectedTool("keep_plan")) {
+    let wrongTool = completion([setPlan()])
+    await #expect(throws: ModelError.unexpectedTool("set_plan")) {
         try await adapter(StubTransport([(200, wrongTool)])).scout(frame, plan: nil)
     }
 }
@@ -208,12 +250,12 @@ private func portrait() throws -> GenrePlaybook { try Knowledge.playbook(.portra
 }
 
 /// 真实 API：思考模式不支持 tool_choice = required（HTTP 400）。scout 仍强制调用工具。
-@Test func judgeDoesNotForceToolChoiceInThinkingMode() async throws {
+@Test func directorDoesNotForceToolChoiceInThinkingMode() async throws {
     let transport = StubTransport([(200, completion([("classify_scene", scoutArgs)])),
-                                   (200, completion([("set_plan", .object(["plan": planArgs(), "rubric": rubricArgs()]))]))])
+                                   (200, completion([setPlan()]))])
     let model = adapter(transport)
     _ = try await model.scout(frame, plan: nil)
-    _ = try await model.judge(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
+    _ = try await model.direct(frame, playbook: try portrait(), plan: nil, memory: nil, feedback: "")
     #expect(try transport.body(0)["tool_choice"] == .string("required"))
     #expect(try transport.body(1)["tool_choice"] == .string("auto"))
 }

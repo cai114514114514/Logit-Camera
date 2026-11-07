@@ -40,9 +40,10 @@ struct EvalRecord: Codable {
     let predictedGenre: GenreID?
     let humanScore: Double
     let weighted: Double?
-    let verdict: String?
+    /// 导演选择的等效焦距（mm）。
+    let focalLength: Double?
     let scoutSeconds: Double?
-    let judgeSeconds: Double?
+    let directorSeconds: Double?
     let promptTokens: Int?
     let completionTokens: Int?
     let error: String?
@@ -57,7 +58,7 @@ func run(_ options: Options) async throws {
     var records: [EvalRecord] = []
 
     for (index, item) in manifest.items.prefix(limit).enumerated() {
-        var predicted: GenreID?, weighted: Double?, verdict: String?, scoutTime: Double?, judgeTime: Double?
+        var predicted: GenreID?, weighted: Double?, focal: Double?, scoutTime: Double?, judgeTime: Double?
         var usage: TokenUsage?, failure: String?
         do {
             let frame = evalFrame(try ImageLoading.load(images.appendingPathComponent(item.file)))
@@ -67,21 +68,17 @@ func run(_ options: Options) async throws {
             predicted = scout.genre
             let playbook = try Knowledge.playbook(scout.genre)
             start = ContinuousClock.now
-            let outcome = try await model.judge(frame, playbook: playbook, plan: nil, memory: nil, feedback: "")
+            let outcome = try await model.direct(frame, playbook: playbook, plan: nil, memory: nil, feedback: "")
             judgeTime = seconds(since: start)
             usage = outcome.usage
-            let rubric: RubricResult = switch outcome.result {
-            case .setPlan(_, let r): r
-            case .keepPlan(let r, _): r
-            }
-            weighted = rubric.weighted(playbook.rubricWeights)
-            verdict = rubric.verdict(weights: playbook.rubricWeights).rawValue
+            weighted = outcome.critique.weighted(playbook.rubricWeights)
+            focal = outcome.plan.lens.focalLength
         } catch {
             failure = "\(error)"
         }
         let record = EvalRecord(file: item.file, expectedGenres: item.expectedGenres, predictedGenre: predicted,
-                                humanScore: item.humanScore, weighted: weighted, verdict: verdict,
-                                scoutSeconds: scoutTime, judgeSeconds: judgeTime,
+                                humanScore: item.humanScore, weighted: weighted, focalLength: focal,
+                                scoutSeconds: scoutTime, directorSeconds: judgeTime,
                                 promptTokens: usage?.prompt, completionTokens: usage?.completion, error: failure)
         records.append(record)
         print(String(format: "[%d/%d] %@ 预期 %@ → %@ · 人工 %.1f · AI %@ %@", index + 1, min(limit, manifest.items.count),
@@ -111,9 +108,9 @@ private func summarize(_ records: [EvalRecord]) {
         print(String(format: "Spearman（AI 加权分 vs 人工分）%.3f · AUC（好/差区分）%.3f",
                      EvalMetrics.spearman(scored.map(\.ai), scored.map(\.human)), EvalMetrics.auc(positives: good, negatives: bad)))
     }
-    let judge = done.compactMap(\.judgeSeconds), scout = done.compactMap(\.scoutSeconds)
+    let judge = done.compactMap(\.directorSeconds), scout = done.compactMap(\.scoutSeconds)
     if !judge.isEmpty {
-        print(String(format: "平均延迟 scout %.1fs · judge %.1fs · token %d/%d", scout.reduce(0, +) / Double(scout.count),
+        print(String(format: "平均延迟 scout %.1fs · direct %.1fs · token %d/%d", scout.reduce(0, +) / Double(scout.count),
                      judge.reduce(0, +) / Double(judge.count), done.compactMap(\.promptTokens).reduce(0, +),
                      done.compactMap(\.completionTokens).reduce(0, +)))
     }

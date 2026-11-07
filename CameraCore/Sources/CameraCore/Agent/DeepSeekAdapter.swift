@@ -1,7 +1,7 @@
 import Foundation
 
 /// DeepSeek 适配器：两档都用 deepseek-flash。
-/// scout：关闭思考、低清图；judge：开启思考（high）、原图、回传上一轮 reasoning_content。
+/// scout：关闭思考、低清图；direct：开启思考（high）、原图、回传上一轮 reasoning_content。
 public struct DeepSeekAdapter: VisionModel {
     public static let model = "deepseek-flash"
     public static let betaEndpoint = URL(string: "https://api.deepseek.com/beta/chat/completions")!
@@ -27,34 +27,28 @@ public struct DeepSeekAdapter: VisionModel {
         catch { throw ModelError.schema("classify_scene 无法解析") }
     }
 
-    public func judge(_ frame: ModelFrame, playbook: GenrePlaybook, plan: ShotPlan?,
-                      memory: JudgeMemory?, feedback: String) async throws -> JudgeOutcome {
+    public func direct(_ frame: ModelFrame, playbook: GenrePlaybook, plan: ShotPlan?,
+                       memory: DirectorMemory?, feedback: String) async throws -> DirectorOutcome {
         var messages: [JSONValue] = [
-            ["role": "system", "content": .string(try PromptBuilder.judgeSystem(playbook: playbook, plan: plan, feedback: feedback))]
+            ["role": "system", "content": .string(try PromptBuilder.directorSystem(playbook: playbook, plan: plan, feedback: feedback))]
         ]
         if let memory {
             messages += [memory.previousUser, memory.assistant,
                          ["role": "tool", "tool_call_id": .string(memory.toolCallID),
-                          "content": .string("本地执行反馈：" + (feedback.isEmpty ? "无变化" : feedback))]]
+                          "content": .string("本机反馈：" + (feedback.isEmpty ? "已执行，无异常" : feedback))]]
         }
-        let current = userMessage(frame, detail: "original")
-        messages.append(current)
-        let reply = try await send(messages: messages, tools: ToolSchemas.judgeTools, thinking: true, timeout: 30,
-                                   allowed: [ToolSchemas.setPlanName, ToolSchemas.keepPlanName])
-        let rubric = try Self.rubric(from: reply.arguments["rubric"])
-        let result: JudgeResult
-        if reply.name == ToolSchemas.setPlanName {
-            let newPlan = try Self.plan(from: reply.arguments["plan"])
-            do { try newPlan.validate(against: frame.limits) }
-            catch let error as PlanValidationError { throw ModelError.invalidPlan(Self.describe(error)) }
-            result = .setPlan(newPlan, rubric)
-        } else {
-            result = .keepPlan(rubric, reason: reply.arguments["reason"]?.stringValue ?? "")
-        }
+        messages.append(userMessage(frame, detail: "original"))
+        let reply = try await send(messages: messages, tools: ToolSchemas.directorTools(limits: frame.limits),
+                                   thinking: true, timeout: 30, allowed: [ToolSchemas.setPlanName])
+        let critique = try Self.critique(from: reply.arguments["critique"])
+        let newPlan = try Self.plan(from: reply.arguments["plan"])
+        do { try newPlan.validate(against: frame.limits) }
+        catch { throw ModelError.invalidPlan(error.detail) }
         // 记忆里只保留上一轮的文字（去掉图像），避免重复发送图片。
         let textOnly: JSONValue = ["role": "user", "content": .string("上一轮画面（图像省略）\n" + PromptBuilder.measurementText(frame))]
-        return JudgeOutcome(result: result, memory: JudgeMemory(previousUser: textOnly, assistant: reply.assistant,
-                                                                toolCallID: reply.callID), usage: reply.usage)
+        return DirectorOutcome(plan: newPlan, critique: critique,
+                               memory: DirectorMemory(previousUser: textOnly, assistant: reply.assistant, toolCallID: reply.callID),
+                               usage: reply.usage)
     }
 
     // MARK: - Request
@@ -140,37 +134,20 @@ public struct DeepSeekAdapter: VisionModel {
 
     // MARK: - Conversion
 
-    /// 工具里「0 表示不限制 / auto 时填 0」转换回方案中的空值。
+    /// 工具里的 0 即「由程序决定 / 题材默认」，与方案中的含义一致，直接解码。
     static func plan(from arguments: JSONValue?) throws -> ShotPlan {
-        guard var plan = arguments?.objectValue, var exposure = plan["exposure"]?.objectValue else {
-            throw ModelError.schema("缺少 plan")
-        }
-        for key in ["shutterFloor", "isoCeiling"] where exposure[key]?.doubleValue == 0 {
-            exposure.removeValue(forKey: key)
-        }
-        if exposure["aperture"]?["mode"] == "auto" { exposure["aperture"] = ["mode": "auto"] }
-        plan["exposure"] = .object(exposure)
-        do { return try JSONValue.object(plan).decode(ShotPlan.self) }
+        guard let arguments, arguments.objectValue != nil else { throw ModelError.schema("缺少 plan") }
+        do { return try arguments.decode(ShotPlan.self) }
         catch { throw ModelError.schema("plan 无法解析") }
     }
 
-    static func rubric(from arguments: JSONValue?) throws -> RubricResult {
-        guard let arguments, let verdict = arguments["verdict"]?.stringValue.flatMap(Verdict.init(rawValue:)) else {
-            throw ModelError.schema("缺少 rubric")
-        }
+    static func critique(from arguments: JSONValue?) throws -> RubricResult {
+        guard let arguments else { throw ModelError.schema("缺少 critique") }
         let scores = try RubricCriterion.allCases.map { criterion -> RubricScore in
             guard let item = arguments[criterion.rawValue], let score = item["score"]?.doubleValue,
-                  let evidence = item["evidence"]?.stringValue else { throw ModelError.schema("rubric.\(criterion.rawValue) 缺失") }
+                  let evidence = item["evidence"]?.stringValue else { throw ModelError.schema("critique.\(criterion.rawValue) 缺失") }
             return RubricScore(criterion: criterion, score: Int(score), evidence: evidence)
         }
-        return RubricResult(scores: scores, modelVerdict: verdict)
-    }
-
-    static func describe(_ error: PlanValidationError) -> String {
-        switch error {
-        case .outOfRange(let name): "outOfRange(\(name))"
-        case .invalidRange(let name): "invalidRange(\(name))"
-        case .unsupportedAperture: "unsupportedAperture"
-        }
+        return RubricResult(scores: scores)
     }
 }

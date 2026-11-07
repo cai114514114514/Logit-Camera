@@ -15,9 +15,9 @@ public struct ModelFrame: Sendable {
     }
 }
 
-/// 评审档的对话记忆：上一轮的用户文字（不含图像）、助手回复（含思考内容）与工具调用 id。
+/// 导演档的对话记忆：上一轮的用户文字（不含图像）、助手回复（含思考内容）与工具调用 id。
 /// 思考模式 + 工具调用要求回传 reasoning_content。
-public struct JudgeMemory: Sendable, Equatable {
+public struct DirectorMemory: Sendable, Equatable {
     public let previousUser: JSONValue
     public let assistant: JSONValue
     public let toolCallID: String
@@ -28,9 +28,10 @@ public struct TokenUsage: Sendable, Equatable {
     public let completion: Int
 }
 
-public struct JudgeOutcome: Sendable, Equatable {
-    public let result: JudgeResult
-    public let memory: JudgeMemory
+public struct DirectorOutcome: Sendable, Equatable {
+    public let plan: ShotPlan
+    public let critique: RubricResult
+    public let memory: DirectorMemory
     public let usage: TokenUsage?
 }
 
@@ -53,8 +54,9 @@ public enum ModelError: Error, Equatable, Sendable {
 /// 视觉模型服务商接口。本期只有 DeepSeek 实现。
 public protocol VisionModel: Sendable {
     func scout(_ frame: ModelFrame, plan: ShotPlan?) async throws -> ScoutResult
-    func judge(_ frame: ModelFrame, playbook: GenrePlaybook, plan: ShotPlan?,
-               memory: JudgeMemory?, feedback: String) async throws -> JudgeOutcome
+    /// 给出完整意图并点评当前画面。方案未通过校验时抛出 `ModelError.invalidPlan(校验文字)`。
+    func direct(_ frame: ModelFrame, playbook: GenrePlaybook, plan: ShotPlan?,
+                memory: DirectorMemory?, feedback: String) async throws -> DirectorOutcome
 }
 
 public protocol HTTPTransport: Sendable {

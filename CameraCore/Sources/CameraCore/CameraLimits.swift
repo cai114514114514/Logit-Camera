@@ -24,6 +24,8 @@ public struct CameraLimits: Codable, Sendable {
     public var minBias: Double
     public var maxBias: Double
     public var exposureModes: [ExposureModeSupport]
+    /// 可用的物理镜头档（等效焦距 mm），例如 [13, 24, 48, 96]。
+    public var lensStops: [Double]
 
     public init(
         minAperture: Double,
@@ -37,7 +39,8 @@ public struct CameraLimits: Codable, Sendable {
         maxZoom: Double,
         minBias: Double,
         maxBias: Double,
-        exposureModes: [ExposureModeSupport]
+        exposureModes: [ExposureModeSupport],
+        lensStops: [Double] = []
     ) {
         self.minAperture = minAperture
         self.maxAperture = maxAperture
@@ -51,5 +54,28 @@ public struct CameraLimits: Codable, Sendable {
         self.minBias = minBias
         self.maxBias = maxBias
         self.exposureModes = exposureModes
+        self.lensStops = lensStops
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case minAperture, maxAperture, apertureStops, minISO, maxISO, minShutter, maxShutter
+        case minZoom, maxZoom, minBias, maxBias, exposureModes, lensStops
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        minAperture = try c.decode(Double.self, forKey: .minAperture)
+        maxAperture = try c.decode(Double.self, forKey: .maxAperture)
+        apertureStops = try c.decode([Double].self, forKey: .apertureStops)
+        minISO = try c.decode(Double.self, forKey: .minISO)
+        maxISO = try c.decode(Double.self, forKey: .maxISO)
+        minShutter = try c.decode(Double.self, forKey: .minShutter)
+        maxShutter = try c.decode(Double.self, forKey: .maxShutter)
+        minZoom = try c.decode(Double.self, forKey: .minZoom)
+        maxZoom = try c.decode(Double.self, forKey: .maxZoom)
+        minBias = try c.decode(Double.self, forKey: .minBias)
+        maxBias = try c.decode(Double.self, forKey: .maxBias)
+        exposureModes = try c.decode([ExposureModeSupport].self, forKey: .exposureModes)
+        lensStops = try c.decodeIfPresent([Double].self, forKey: .lensStops) ?? []
     }
 }

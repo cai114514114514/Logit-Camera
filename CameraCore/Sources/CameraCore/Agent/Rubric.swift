@@ -16,15 +16,17 @@ public struct RubricScore: Codable, Equatable, Sendable {
     }
 }
 
+/// 旧版评审的结论（只用于解码旧的拍摄记录）。
 public enum Verdict: String, Codable, Sendable {
     case approve, wait, revise
 }
 
+/// 导演对当前画面的量表点评：分数与证据。只用于让模型基于证据思考、在界面和日志中展示，不参与任何判定。
 public struct RubricResult: Codable, Equatable, Sendable {
     public var scores: [RubricScore]
-    public var modelVerdict: Verdict
+    public var modelVerdict: Verdict?
 
-    public init(scores: [RubricScore], modelVerdict: Verdict) {
+    public init(scores: [RubricScore], modelVerdict: Verdict? = nil) {
         self.scores = scores
         self.modelVerdict = modelVerdict
     }
@@ -35,15 +37,6 @@ public struct RubricResult: Codable, Equatable, Sendable {
 
     public func weighted(_ weights: [RubricCriterion: Double]) -> Double {
         RubricCriterion.allCases.reduce(0) { $0 + (weights[$1] ?? 0) * Double(score($1) ?? 0) }
-    }
-
-    /// 放行规则：权重 > 0 的每一项都必须存在且 > 1 分，加权总分 ≥ 3.0。
-    /// 模型的结论只能让结果更严，不能更宽。
-    public func verdict(weights: [RubricCriterion: Double]) -> Verdict {
-        if modelVerdict == .revise { return .revise }
-        let gated = RubricCriterion.allCases.filter { (weights[$0] ?? 0) > 0 }
-        guard gated.allSatisfy({ (score($0) ?? -1) > 1 }), weighted(weights) >= 3.0 - 1e-9 else { return .wait }
-        return modelVerdict
     }
 }
 

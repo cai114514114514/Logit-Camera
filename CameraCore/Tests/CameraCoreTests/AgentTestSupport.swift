@@ -11,18 +11,20 @@ let typicalLimits = CameraLimits(
         ExposureModeSupport(apertureAuto: false, shutterAuto: true, isoAuto: true),
         ExposureModeSupport(apertureAuto: false, shutterAuto: false, isoAuto: true),
         ExposureModeSupport(apertureAuto: true, shutterAuto: false, isoAuto: true)
-    ]
+    ],
+    lensStops: [13, 24, 48, 120]
 )
 
-func samplePlan(subject: SubjectKind = .face, triggers: [Trigger] = [.eyesOpen(min: 0.6)], holdMs: Int = 200) -> ShotPlan {
+func samplePlan(genre: GenreID = .portrait, subject: SubjectKind = .face, moment: [Trigger] = [.eyesOpen(min: 0.6)],
+                holdMs: Int = 200, focalLength: Double = 48) -> ShotPlan {
     ShotPlan(
-        genre: .portrait, genreConfidence: 0.9, subject: subject,
+        genre: genre, genreConfidence: 0.9, subject: subject,
         composition: Composition(ratio: .standard, anchor: NormalizedPoint(x: 0.67, y: 0.38),
                                  subjectSize: SizeRange(min: 0.35, max: 0.55), minCropArea: 0.25, levelHorizon: false),
+        lens: LensIntent(focalLength: focalLength),
         exposure: ExposureIntent(meter: .subject, subjectEV: 0.3, highlightClipMax: 0.01,
-                                 aperture: ApertureIntent(mode: .prefer, value: 2.0),
-                                 shutterFloor: 1.0 / 125, isoCeiling: 1600),
-        triggers: triggers, holdMs: holdMs, rationale: "逆光人像，主体放右三分")
+                                 motion: .freeze, depth: .shallow, shutterFloor: 0, isoCeiling: 1600),
+        moment: moment, holdMs: holdMs, rationale: "逆光人像，主体放右三分")
 }
 
 func sampleMeasurement(at time: TimeInterval = 0, subjects: [Subject] = [], primary: Int? = nil,

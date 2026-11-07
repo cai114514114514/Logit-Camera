@@ -14,7 +14,7 @@ public enum PromptBuilder {
         return try Knowledge.prompt(.system) + "\n\n" + scout
     }
 
-    public static func judgeSystem(playbook: GenrePlaybook, plan: ShotPlan?, feedback: String) throws -> String {
+    public static func directorSystem(playbook: GenrePlaybook, plan: ShotPlan?, feedback: String) throws -> String {
         let anchors = try Knowledge.rubricAnchors()
         var rubricLines = RubricCriterion.allCases.compactMap { criterion -> String? in
             guard let anchor = anchors[criterion] else { return nil }
@@ -25,14 +25,14 @@ public enum PromptBuilder {
         let weights = RubricCriterion.allCases
             .map { "\($0.rawValue) \(String(format: "%.2f", playbook.rubricWeights[$0] ?? 0))" }
             .joined(separator: "，")
-        let judge = try Knowledge.prompt(.judge)
+        let director = try Knowledge.prompt(.director)
             .replacingOccurrences(of: "{{GENRE_NAME}}", with: playbook.name)
             .replacingOccurrences(of: "{{PLAYBOOK}}", with: playbookText(playbook))
             .replacingOccurrences(of: "{{RUBRIC}}", with: rubricLines.joined(separator: "\n"))
             .replacingOccurrences(of: "{{WEIGHTS}}", with: weights)
             .replacingOccurrences(of: "{{PLAN}}", with: planText(plan))
             .replacingOccurrences(of: "{{FEEDBACK}}", with: feedback.isEmpty ? "无" : feedback)
-        return try Knowledge.prompt(.system) + "\n\n" + judge
+        return try Knowledge.prompt(.system) + "\n\n" + director
     }
 
     static func playbookText(_ playbook: GenrePlaybook) -> String {
@@ -92,7 +92,8 @@ public enum PromptBuilder {
             "aperture": [.number(round3(l.minAperture)), .number(round3(l.maxAperture))],
             "apertureStops": .array(l.apertureStops.map { .number(round3($0)) }),
             "iso": [.number(l.minISO), .number(l.maxISO)],
-            "shutterSeconds": [.number(l.minShutter), .number(l.maxShutter)]
+            "shutterSeconds": [.number(l.minShutter), .number(l.maxShutter)],
+            "lensStopsMM": .array(l.lensStops.map { .number(round3($0)) })
         ]
         return "本地测量：" + JSONValue.object(measurement).compactString() + "\n设备能力：" + limits.compactString()
     }
