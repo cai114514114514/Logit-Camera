@@ -24,21 +24,13 @@ enum Theme {
         static var labelMono: Font { .system(.caption2, design: .monospaced, weight: .medium) }
         static var body: Font { .system(.caption) }
         static var bodyMono: Font { .system(.caption, design: .monospaced, weight: .medium) }
-        static var countdown: Font { .system(.title, design: .rounded, weight: .ultraLight).monospacedDigit() }
     }
 
     enum Metric {
         static let hairline: CGFloat = 1
         static let cornerTick: CGFloat = 18
         static let hudHeight: CGFloat = 44
-        static let statusHeight: CGFloat = 28
         static let gutter: CGFloat = 16
-    }
-
-    enum Motion {
-        static let breathPeriod: Double = 3
-        static let scanDuration: Double = 0.9
-        static let annotationLifetime: Duration = .seconds(4)
     }
 
     static func color(for origin: ValueOrigin) -> Color {

@@ -45,8 +45,6 @@ final class AgentController {
     @ObservationIgnored var onCorrection: (([LookOp]) -> Void)?
     @ObservationIgnored private var correctionSmoother = CorrectionSmoother()
     @ObservationIgnored private var lastCorrectionTime: TimeInterval?
-    /// 每次真正截取一帧发给模型时加一，驱动取景扫描线。
-    private(set) var observationTick = 0
     private(set) var calls = 0
     private(set) var faulted = false
     private(set) var status = "AI 待命"
@@ -337,7 +335,6 @@ final class AgentController {
                 return self.failQuietly(id)
             }
             guard self.isCurrent(id) else { return }
-            self.observationTick += 1
             self.calls += 1
             do {
                 let result = try await model.scout(frame, plan: plan)
@@ -366,7 +363,6 @@ final class AgentController {
                 return self.failQuietly(id)
             }
             guard self.isCurrent(id) else { return }
-            self.observationTick += 1
             self.calls += 1
             do {
                 let outcome = try await model.direct(frame, playbook: playbook, plan: currentPlan, memory: memory, feedback: text)
@@ -528,7 +524,7 @@ final class AgentController {
         self.reason = reason
         self.faulted = faulted
         status = faulted ? "AI 需要检查密钥" : statusText()
-        if tick { observationTick += 1; calls += 1 }
+        if tick { calls += 1 }
         if let plan, history.isEmpty { history = [AgentLogEntry(date: Date(), text: "新方案：\(genreName ?? "") · \(plan.rationale)")] }
     }
     #endif

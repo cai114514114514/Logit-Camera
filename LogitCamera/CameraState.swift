@@ -43,11 +43,6 @@ struct CameraState: Sendable {
 
     var canCapture: Bool { phase == .ready && !isApplying && !isCapturing }
 
-    var settings: CameraSettings {
-        CameraSettings(ratio: ratio, zoom: Double(zoom), aperture: selectedAperture.map(Double.init),
-                       iso: selectedISO, shutterSeconds: selectedShutter, exposureBias: Double(exposureBias))
-    }
-
     var hasManualExposure: Bool { selectedAperture != nil || selectedISO != nil || selectedShutter != nil }
 }
 
