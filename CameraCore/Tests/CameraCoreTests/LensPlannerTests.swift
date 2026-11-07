@@ -73,3 +73,20 @@ private let wideStops = [LensStop(focalLength: 13, zoomFactor: 0.5, lens: .ultra
     _ = planner.reportStarved(true, now: 1)
     #expect(planner.plan(for: LensIntent(focalLength: 120), genreDefault: 24, planID: UUID())?.focalLength == 120)
 }
+
+@Test func steplessZoomLensHysteresis() {
+    func lens(_ zoom: Double, _ current: LensStop.Lens) -> LensStop.Lens {
+        LensStop.lens(forDisplayZoom: zoom, current: current, teleBase: 4, hasUltraWide: true)
+    }
+    #expect(lens(0.7, .wide) == .ultraWide)
+    #expect(lens(1.02, .ultraWide) == .ultraWide)   // 滞回：超广角继续到 1.05×
+    #expect(lens(1.1, .ultraWide) == .wide)
+    #expect(lens(4.1, .wide) == .wide)              // 滞回：主摄数码到 4.2×
+    #expect(lens(4.3, .wide) == .telephoto)
+    #expect(lens(4.1, .telephoto) == .telephoto)
+    #expect(lens(3.9, .telephoto) == .wide)         // 长焦不能低于 4×
+    #expect(lens(0.8, .telephoto) == .ultraWide)
+    #expect(lens(30, .ultraWide) == .telephoto)
+    #expect(LensStop.lens(forDisplayZoom: 0.7, current: .wide, teleBase: nil, hasUltraWide: false) == .wide)
+    #expect(LensStop.lens(forDisplayZoom: 20, current: .wide, teleBase: nil, hasUltraWide: true) == .wide)
+}

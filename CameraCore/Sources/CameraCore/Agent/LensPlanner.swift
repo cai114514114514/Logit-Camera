@@ -20,6 +20,22 @@ public struct LensStop: Codable, Sendable, Equatable, Hashable {
     /// 主摄等效焦距。
     public static let mainFocalLength = 24.0
 
+    /// 无极变焦时显示倍率落在哪颗镜头。镜头只能放大不能缩小，所以低于本镜头基准必须切换；
+    /// 向上切换（超广角→主摄、主摄→长焦）留 5% 滞回，避免停在边界附近来回换镜头。
+    public static func lens(forDisplayZoom zoom: Double, current: Lens, teleBase: Double?, hasUltraWide: Bool) -> Lens {
+        switch current {
+        case .ultraWide:
+            if zoom < 1.05 { return .ultraWide }
+        case .telephoto:
+            if let teleBase, zoom >= teleBase - 0.001 { return .telephoto }
+        case .wide:
+            if zoom >= 0.999, !(teleBase.map { zoom >= $0 * 1.05 } ?? false) { return .wide }
+        }
+        if zoom < 0.999, hasUltraWide { return .ultraWide }
+        if let teleBase, zoom >= teleBase * 1.05 - 0.001 || (current == .telephoto && zoom >= teleBase - 0.001) { return .telephoto }
+        return .wide
+    }
+
     /// 由虚拟三摄的 switch-over 倍率与显示倍率换算出镜头档。
     /// - Parameters:
     ///   - switchOver: 虚拟设备的 switch-over 倍率，例如 [2, 8]（超广角→主摄、主摄→长焦）。

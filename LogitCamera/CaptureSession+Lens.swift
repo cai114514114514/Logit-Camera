@@ -35,18 +35,25 @@ extension CaptureSession {
         }
     }
 
-    /// 显示倍率落在哪颗镜头：低于 1× 用超广角，达到长焦档用长焦，其余用主摄（含 2× 裁切）。
+    /// 无极变焦上限（与系统相机一致）。
+    static let maxDisplayZoom = 40.0
+
+    /// 显示倍率落在哪颗镜头。镜头只能放大不能缩小，所以低于本镜头基准必须切换；
+    /// 向上切换（超广角→主摄、主摄→长焦）留 5% 滞回，避免停在边界附近来回换镜头。
     func lens(forDisplayZoom zoom: Double) -> LensStop.Lens {
-        if zoom < 0.99, lensDevices[.ultraWide] != nil { return .ultraWide }
-        if let tele = state.lensStops.first(where: { $0.lens == .telephoto }), zoom >= tele.zoomFactor - 0.01,
-           lensDevices[.telephoto] != nil { return .telephoto }
-        return .wide
+        let teleBase = lensDevices[.telephoto] == nil ? nil : state.lensStops.first { $0.lens == .telephoto }?.zoomFactor
+        return LensStop.lens(forDisplayZoom: zoom, current: currentLens, teleBase: teleBase,
+                             hasUltraWide: lensDevices[.ultraWide] != nil)
     }
 
     var displayZoomRange: ClosedRange<Double> {
         let low = state.lensStops.map(\.zoomFactor).min() ?? 1
-        let high = (state.lensStops.map(\.zoomFactor).max() ?? 1) * 2
-        return low...max(high, 3)
+        let longest: Double = if let tele = lensDevices[.telephoto], let base = state.lensStops.first(where: { $0.lens == .telephoto })?.zoomFactor {
+            base * Double(tele.maxAvailableVideoZoomFactor)
+        } else {
+            Double(lensDevices[.wide]?.maxAvailableVideoZoomFactor ?? 3)
+        }
+        return low...max(min(longest, Self.maxDisplayZoom), 2)
     }
 
     /// 把会话输入换成指定镜头。调用方在相机队列上、会话之外调用。
@@ -124,19 +131,19 @@ extension CaptureSession {
         }
     }
 
-    /// AI 选定的镜头档。
+    /// AI 选定的镜头档：直接用这颗物理镜头（不走滞回）。
     func setLens(_ stop: LensStop) {
         queue.async {
             guard self.state.phase == .ready, !self.state.isCapturing else { return }
-            self.applyZoom(stop.zoomFactor, animated: true)
+            self.applyZoom(stop.zoomFactor, animated: true, lens: self.lensDevices[stop.lens] == nil ? nil : stop.lens)
         }
     }
 
-    /// 相机队列上调用。
-    func applyZoom(_ display: Double, animated: Bool) {
+    /// 相机队列上调用。`lens` 为空时按倍率与滞回选择镜头。
+    func applyZoom(_ display: Double, animated: Bool, lens preferred: LensStop.Lens? = nil) {
         let range = displayZoomRange
         let target = min(max(display, range.lowerBound), range.upperBound)
-        let lens = lens(forDisplayZoom: target)
+        let lens = preferred ?? lens(forDisplayZoom: target)
         do {
             if lens != currentLens { try attach(lens) }
             guard let device else { return }
