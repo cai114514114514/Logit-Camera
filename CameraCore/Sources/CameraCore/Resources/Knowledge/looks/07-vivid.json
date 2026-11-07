@@ -1,0 +1,12 @@
+{ "version": 1, "name": "浓郁", "strength": 1,
+  "correction": [
+    { "op": "highlightsShadows", "highlights": -0.2, "shadows": 0.1 }
+  ],
+  "style": [
+    { "op": "contrast", "amount": 0.15 },
+    { "op": "vibrance", "amount": 0.35 },
+    { "op": "hsl", "bands": [
+      { "band": "blue", "saturation": 0.2, "luminance": -0.12 },
+      { "band": "aqua", "saturation": 0.1, "luminance": -0.05 },
+      { "band": "green", "saturation": 0.1 } ] }
+  ] }

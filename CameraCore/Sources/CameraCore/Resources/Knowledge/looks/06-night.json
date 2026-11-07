@@ -1,0 +1,12 @@
+{ "version": 1, "name": "夜色", "strength": 1,
+  "correction": [
+    { "op": "whiteBalance", "temperature": -0.1, "tint": 0.02 },
+    { "op": "highlightsShadows", "highlights": -0.4, "shadows": 0.08 }
+  ],
+  "style": [
+    { "op": "colorGrade", "shadows": { "hue": 220, "amount": 0.2 }, "midtones": { "hue": 0, "amount": 0 },
+      "highlights": { "hue": 30, "amount": 0.1 }, "balance": -0.15 },
+    { "op": "fade", "amount": 0.1 },
+    { "op": "saturation", "amount": -0.05 },
+    { "op": "bloom", "amount": 0.25 }
+  ] }

@@ -1,0 +1,16 @@
+{ "version": 1, "name": "电影冷调", "strength": 1,
+  "correction": [
+    { "op": "highlightsShadows", "highlights": -0.25, "shadows": 0.05 }
+  ],
+  "style": [
+    { "op": "contrast", "amount": 0.15 },
+    { "op": "toneCurve", "points": [[0, 0.02], [0.25, 0.22], [0.5, 0.48], [0.75, 0.76], [1, 0.97]] },
+    { "op": "colorGrade", "shadows": { "hue": 195, "amount": 0.24 }, "midtones": { "hue": 200, "amount": 0.04 },
+      "highlights": { "hue": 35, "amount": 0.15 }, "balance": -0.1 },
+    { "op": "hsl", "bands": [
+      { "band": "orange", "saturation": 0.05, "luminance": 0.05 },
+      { "band": "green", "hue": 0.3, "saturation": -0.35 },
+      { "band": "blue", "hue": -0.1, "saturation": -0.1, "luminance": -0.1 } ] },
+    { "op": "saturation", "amount": -0.1 },
+    { "op": "vignette", "amount": -0.22, "midpoint": 0.5 }
+  ] }

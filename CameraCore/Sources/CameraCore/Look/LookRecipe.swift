@@ -50,6 +50,87 @@ public struct CustomShader: Codable, Sendable, Equatable {
     }
 }
 
+/// HSL 的八个色相段。
+public enum HueBand: String, Codable, Sendable, CaseIterable {
+    case red, orange, yellow, green, aqua, blue, purple, magenta
+
+    /// 段中心色相（度）。
+    public var center: Double {
+        switch self {
+        case .red: 0
+        case .orange: 30
+        case .yellow: 60
+        case .green: 120
+        case .aqua: 180
+        case .blue: 240
+        case .purple: 270
+        case .magenta: 300
+        }
+    }
+}
+
+public struct HSLBand: Codable, Sendable, Equatable {
+    public var band: HueBand
+    /// 色相偏移 −1…1（±30°）、饱和度与明度 −1…1。
+    public var hue: Double
+    public var saturation: Double
+    public var luminance: Double
+
+    public init(_ band: HueBand, hue: Double = 0, saturation: Double = 0, luminance: Double = 0) {
+        self.band = band
+        self.hue = hue
+        self.saturation = saturation
+        self.luminance = luminance
+    }
+
+    private enum Keys: String, CodingKey { case band, hue, saturation, luminance }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        band = try c.decode(HueBand.self, forKey: .band)
+        hue = try c.decodeIfPresent(Double.self, forKey: .hue) ?? 0
+        saturation = try c.decodeIfPresent(Double.self, forKey: .saturation) ?? 0
+        luminance = try c.decodeIfPresent(Double.self, forKey: .luminance) ?? 0
+    }
+}
+
+public struct GradeWheel: Codable, Sendable, Equatable {
+    /// 色相 0…360、强度 0…1。
+    public var hue: Double
+    public var amount: Double
+
+    public init(hue: Double = 0, amount: Double = 0) {
+        self.hue = hue
+        self.amount = amount
+    }
+}
+
+/// 三向色轮：阴影、中间调、高光各自叠加色偏；balance 移动阴影与高光的分界。
+public struct ColorGrade: Codable, Sendable, Equatable {
+    public var shadows: GradeWheel
+    public var midtones: GradeWheel
+    public var highlights: GradeWheel
+    public var balance: Double
+
+    public init(shadows: GradeWheel = GradeWheel(), midtones: GradeWheel = GradeWheel(),
+                highlights: GradeWheel = GradeWheel(), balance: Double = 0) {
+        self.shadows = shadows
+        self.midtones = midtones
+        self.highlights = highlights
+        self.balance = balance
+    }
+
+    private enum Keys: String, CodingKey { case shadows, midtones, highlights, balance }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        shadows = try c.decodeIfPresent(GradeWheel.self, forKey: .shadows) ?? GradeWheel()
+        midtones = try c.decodeIfPresent(GradeWheel.self, forKey: .midtones) ?? GradeWheel()
+        highlights = try c.decodeIfPresent(GradeWheel.self, forKey: .highlights) ?? GradeWheel()
+        balance = try c.decodeIfPresent(Double.self, forKey: .balance) ?? 0
+    }
+}
+
 /// 配方中的一步调色操作。JSON：`{"op": "exposure", "ev": 0.3}`。
 public enum LookOp: Sendable, Equatable {
     case exposure(ev: Double)
@@ -59,6 +140,13 @@ public enum LookOp: Sendable, Equatable {
     case vibrance(Double)
     case toneCurve([CurvePoint])
     case fade(Double)
+    case highlightsShadows(highlights: Double, shadows: Double)
+    case hsl([HSLBand])
+    case colorGrade(ColorGrade)
+    case grain(amount: Double, size: Double)
+    case vignette(amount: Double, midpoint: Double)
+    case mono(red: Double, green: Double, blue: Double)
+    case bloom(Double)
     case custom(CustomShader)
 
     public var name: String {
@@ -70,13 +158,23 @@ public enum LookOp: Sendable, Equatable {
         case .vibrance: "vibrance"
         case .toneCurve: "toneCurve"
         case .fade: "fade"
+        case .highlightsShadows: "highlightsShadows"
+        case .hsl: "hsl"
+        case .colorGrade: "colorGrade"
+        case .grain: "grain"
+        case .vignette: "vignette"
+        case .mono: "mono"
+        case .bloom: "bloom"
         case .custom: "custom"
         }
     }
 }
 
 extension LookOp: Codable {
-    private enum Keys: String, CodingKey { case op, ev, temperature, tint, amount, points, name, body, params }
+    private enum Keys: String, CodingKey {
+        case op, ev, temperature, tint, amount, points, name, body, params
+        case highlights, shadows, midtones, balance, bands, size, midpoint, red, green, blue
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -91,6 +189,22 @@ extension LookOp: Codable {
         case "vibrance": self = .vibrance(try c.decode(Double.self, forKey: .amount))
         case "toneCurve": self = .toneCurve(try c.decode([CurvePoint].self, forKey: .points))
         case "fade": self = .fade(try c.decode(Double.self, forKey: .amount))
+        case "highlightsShadows":
+            self = .highlightsShadows(highlights: try c.decodeIfPresent(Double.self, forKey: .highlights) ?? 0,
+                                      shadows: try c.decodeIfPresent(Double.self, forKey: .shadows) ?? 0)
+        case "hsl": self = .hsl(try c.decode([HSLBand].self, forKey: .bands))
+        case "colorGrade": self = .colorGrade(try ColorGrade(from: decoder))
+        case "grain":
+            self = .grain(amount: try c.decode(Double.self, forKey: .amount),
+                          size: try c.decodeIfPresent(Double.self, forKey: .size) ?? 0.5)
+        case "vignette":
+            self = .vignette(amount: try c.decode(Double.self, forKey: .amount),
+                             midpoint: try c.decodeIfPresent(Double.self, forKey: .midpoint) ?? 0.5)
+        case "mono":
+            self = .mono(red: try c.decodeIfPresent(Double.self, forKey: .red) ?? 0.3,
+                         green: try c.decodeIfPresent(Double.self, forKey: .green) ?? 0.59,
+                         blue: try c.decodeIfPresent(Double.self, forKey: .blue) ?? 0.11)
+        case "bloom": self = .bloom(try c.decode(Double.self, forKey: .amount))
         case "custom":
             self = .custom(CustomShader(name: try c.decodeIfPresent(String.self, forKey: .name) ?? "自定义",
                                         body: try c.decode(String.self, forKey: .body),
@@ -110,6 +224,26 @@ extension LookOp: Codable {
             try c.encode(tint, forKey: .tint)
         case .contrast(let v), .saturation(let v), .vibrance(let v), .fade(let v): try c.encode(v, forKey: .amount)
         case .toneCurve(let points): try c.encode(points, forKey: .points)
+        case .highlightsShadows(let highlights, let shadows):
+            try c.encode(highlights, forKey: .highlights)
+            try c.encode(shadows, forKey: .shadows)
+        case .hsl(let bands): try c.encode(bands, forKey: .bands)
+        case .colorGrade(let grade):
+            try c.encode(grade.shadows, forKey: .shadows)
+            try c.encode(grade.midtones, forKey: .midtones)
+            try c.encode(grade.highlights, forKey: .highlights)
+            try c.encode(grade.balance, forKey: .balance)
+        case .grain(let amount, let size):
+            try c.encode(amount, forKey: .amount)
+            try c.encode(size, forKey: .size)
+        case .vignette(let amount, let midpoint):
+            try c.encode(amount, forKey: .amount)
+            try c.encode(midpoint, forKey: .midpoint)
+        case .mono(let red, let green, let blue):
+            try c.encode(red, forKey: .red)
+            try c.encode(green, forKey: .green)
+            try c.encode(blue, forKey: .blue)
+        case .bloom(let amount): try c.encode(amount, forKey: .amount)
         case .custom(let shader):
             try c.encode(shader.name, forKey: .name)
             try c.encode(shader.body, forKey: .body)
@@ -182,6 +316,33 @@ public struct LookRecipe: Codable, Sendable, Equatable {
             guard zip(points, points.dropFirst()).allSatisfy({ $0.x < $1.x }) else {
                 throw .outOfRange("\(path).points x 必须严格递增")
             }
+        case .highlightsShadows(let highlights, let shadows):
+            try check(highlights, -1...0, "\(path).highlights −1…0")
+            try check(shadows, -1...1, "\(path).shadows −1…1")
+        case .hsl(let bands):
+            guard bands.count <= HueBand.allCases.count else { throw .outOfRange("\(path).bands 最多 8 条") }
+            guard Set(bands.map(\.band)).count == bands.count else { throw .outOfRange("\(path).bands 色相段不能重复") }
+            for band in bands {
+                try check(band.hue, -1...1, "\(path).\(band.band.rawValue).hue −1…1")
+                try check(band.saturation, -1...1, "\(path).\(band.band.rawValue).saturation −1…1")
+                try check(band.luminance, -1...1, "\(path).\(band.band.rawValue).luminance −1…1")
+            }
+        case .colorGrade(let grade):
+            for (name, wheel) in [("shadows", grade.shadows), ("midtones", grade.midtones), ("highlights", grade.highlights)] {
+                try check(wheel.hue, 0...360, "\(path).\(name).hue 0…360")
+                try check(wheel.amount, 0...1, "\(path).\(name).amount 0…1")
+            }
+            try check(grade.balance, -1...1, "\(path).balance −1…1")
+        case .grain(let amount, let size):
+            try check(amount, 0...1, "\(path).amount 0…1")
+            try check(size, 0...1, "\(path).size 0…1")
+        case .vignette(let amount, let midpoint):
+            try check(amount, -1...1, "\(path).amount −1…1")
+            try check(midpoint, 0...1, "\(path).midpoint 0…1")
+        case .mono(let red, let green, let blue):
+            for (name, value) in [("red", red), ("green", green), ("blue", blue)] { try check(value, 0...1, "\(path).\(name) 0…1") }
+            guard red + green + blue > 0.01 else { throw .outOfRange("\(path) 权重之和必须大于 0") }
+        case .bloom(let amount): try check(amount, 0...1, "\(path).amount 0…1")
         case .custom(let shader):
             guard shader.params.count <= ShaderSandbox.maxParams else { throw .outOfRange("\(path).params 最多 8 个") }
             for value in shader.params { try check(value, -10...10, "\(path).params −10…10") }

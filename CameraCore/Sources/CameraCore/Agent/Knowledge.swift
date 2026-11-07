@@ -68,6 +68,20 @@ public enum Knowledge {
         try JSONDecoder().decode(RubricFile.self, from: Data(contentsOf: try file("rubric.json"))).anchors
     }
 
+    /// 内置滤镜预设（`looks/*.json`），按文件名排序。写错的预设跳过，不让 App 崩溃。
+    public static func looks() -> [LookRecipe] {
+        guard let directory = root?.appendingPathComponent("looks"),
+              let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        else { return [.identity] }
+        let recipes = files.filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .compactMap { url -> LookRecipe? in
+                guard let data = try? Data(contentsOf: url), let recipe = try? JSONDecoder().decode(LookRecipe.self, from: data),
+                      (try? recipe.validate()) != nil else { return nil }
+                return recipe
+            }
+        return recipes.isEmpty ? [.identity] : recipes
+    }
+
     public static func prompt(_ name: PromptName) throws -> String {
         try String(contentsOf: try file("prompts/\(name.rawValue).md"), encoding: .utf8)
     }

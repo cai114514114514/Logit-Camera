@@ -1,0 +1,14 @@
+{ "version": 1, "name": "柔光人像", "strength": 1,
+  "correction": [
+    { "op": "exposure", "ev": 0.1 },
+    { "op": "highlightsShadows", "highlights": -0.25, "shadows": 0.15 }
+  ],
+  "style": [
+    { "op": "contrast", "amount": -0.1 },
+    { "op": "hsl", "bands": [
+      { "band": "orange", "saturation": -0.12, "luminance": 0.15 },
+      { "band": "red", "saturation": -0.05, "luminance": 0.05 } ] },
+    { "op": "colorGrade", "shadows": { "hue": 0, "amount": 0 }, "midtones": { "hue": 0, "amount": 0 },
+      "highlights": { "hue": 30, "amount": 0.06 }, "balance": 0 },
+    { "op": "bloom", "amount": 0.08 }
+  ] }

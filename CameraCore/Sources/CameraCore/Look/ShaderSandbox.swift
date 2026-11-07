@@ -4,6 +4,46 @@ import Foundation
 public enum ShaderSandbox {
     public static let maxLength = 2000
     public static let maxParams = 8
+    /// `LookParams.v` 的长度：自定义着色器只用前 8 个，内置着色器可以用全部 32 个。
+    public static let paramCount = 32
+
+    /// 模板中提供的辅助函数（自定义与内置着色器都可以调用）。
+    public static let helpers = """
+    static float logit_luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+
+    static float logit_hash(float2 p) {
+        float3 q = fract(float3(p.xyx) * 0.1031);
+        q += dot(q, q.yzx + 33.33);
+        return fract((q.x + q.y) * q.z);
+    }
+
+    /// 色相（0…1）→ 饱和的 RGB。
+    static float3 logit_hue_rgb(float h) {
+        float3 k = clamp(abs(fract(h + float3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+        return k;
+    }
+
+    /// RGB → HSL（各 0…1）。
+    static float3 logit_rgb2hsl(float3 c) {
+        float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
+        float l = (mx + mn) * 0.5;
+        float d = mx - mn;
+        if (d < 1e-5) { return float3(0.0, 0.0, l); }
+        float s = l > 0.5 ? d / (2.0 - mx - mn) : d / (mx + mn);
+        float h;
+        if (mx == c.r) { h = (c.g - c.b) / d + (c.g < c.b ? 6.0 : 0.0); }
+        else if (mx == c.g) { h = (c.b - c.r) / d + 2.0; }
+        else { h = (c.r - c.g) / d + 4.0; }
+        return float3(h / 6.0, s, l);
+    }
+
+    /// HSL → RGB。
+    static float3 logit_hsl2rgb(float3 hsl) {
+        float3 rgb = logit_hue_rgb(hsl.x);
+        float c = (1.0 - abs(2.0 * hsl.z - 1.0)) * hsl.y;
+        return (rgb - 0.5) * c + hsl.z;
+    }
+    """
     /// 符号类禁用标记（子串匹配）。
     static let forbiddenSymbols = ["#", "[[", "__"]
     /// 关键字类禁用标记（整词匹配）。
@@ -25,9 +65,11 @@ public enum ShaderSandbox {
         using namespace metal;
 
         struct LookParams {
-            float v[8];
+            float v[32];
             float time;
         };
+
+        \(helpers)
 
         static float4 logit_shade(float4 color, float2 uv, constant LookParams& p) {
         \(body)

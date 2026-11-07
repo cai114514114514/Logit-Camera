@@ -1,0 +1,17 @@
+{ "version": 1, "name": "通透", "strength": 1,
+  "correction": [
+    { "op": "exposure", "ev": 0.2 },
+    { "op": "whiteBalance", "temperature": -0.05, "tint": 0.0 },
+    { "op": "highlightsShadows", "highlights": -0.35, "shadows": 0.3 }
+  ],
+  "style": [
+    { "op": "contrast", "amount": -0.15 },
+    { "op": "toneCurve", "points": [[0, 0.06], [0.5, 0.53], [1, 0.97]] },
+    { "op": "colorGrade", "shadows": { "hue": 190, "amount": 0.14 }, "midtones": { "hue": 0, "amount": 0 },
+      "highlights": { "hue": 45, "amount": 0.05 }, "balance": 0.1 },
+    { "op": "hsl", "bands": [
+      { "band": "green", "hue": 0.25, "saturation": -0.25, "luminance": 0.1 },
+      { "band": "orange", "saturation": -0.05, "luminance": 0.15 },
+      { "band": "blue", "saturation": -0.1, "luminance": 0.05 } ] },
+    { "op": "saturation", "amount": -0.08 }
+  ] }
