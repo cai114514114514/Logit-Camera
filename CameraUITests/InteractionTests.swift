@@ -199,7 +199,10 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         attachShot(app, "correction-detail")
         XCTAssertEqual(toggle.value as? String, "1")
-        toggle.tap()
-        XCTAssertEqual(toggle.value as? String, "0")
+        // 点开关本体（右侧），不点左侧说明文字。
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        let off = expectation(for: NSPredicate(format: "value == '0'"), evaluatedWith: toggle)
+        wait(for: [off], timeout: 3)
+        attachShot(app, "correction-off")
     }
 }

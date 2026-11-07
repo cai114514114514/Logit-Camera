@@ -322,7 +322,8 @@ final class CameraModel {
             try await PhotoLibrary.save(photo)
             if latestPhoto?.id == photo.id {
                 photoSaved = true
-                post("已保存到照片图库")
+                // AI 开启时字幕与选片动画已经说明拍好了，不再弹提示，避免与字幕重叠。
+                if !agent.isEnabled { post("已保存到照片图库") }
             }
             if let localURL { try? FileManager.default.removeItem(at: localURL) }
         } catch {
