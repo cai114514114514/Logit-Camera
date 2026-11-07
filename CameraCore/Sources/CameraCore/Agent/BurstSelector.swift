@@ -15,10 +15,19 @@ public struct FrameQuality: Codable, Sendable, Equatable {
     }
 }
 
-/// 连拍选片（规格 §6.3）：每项指标组内 min-max 归一化，按题材加权；缺失的指标不参与。
+/// 连拍选片（规格 §6.3）：每项指标组内归一化（跨度不小于该指标的最小跨度），按题材加权；缺失的指标不参与。
 public enum BurstSelector {
     private enum Metric: CaseIterable {
         case sharpness, eyesOpen, faceQuality, aesthetics
+
+        /// 归一化的最小跨度：组内差异小于它时按比例计分，避免把微小差异放大成满分差距。
+        var minimumSpan: Double {
+            switch self {
+            case .sharpness: 0.2
+            case .eyesOpen, .faceQuality: 0.3
+            case .aesthetics: 0.5
+            }
+        }
 
         func value(_ frame: FrameQuality) -> Double? {
             switch self {
@@ -46,10 +55,10 @@ public enum BurstSelector {
             let values = frames.map { metric.value($0) }
             let present = values.compactMap { $0 }
             guard let low = present.min(), let high = present.max() else { continue }
-            let span = high - low
+            let span = max(high - low, metric.minimumSpan)
             for (index, value) in values.enumerated() {
                 guard let value else { continue }
-                let normalized = span > 1e-9 ? (value - low) / span : 0
+                let normalized = (value - low) / span
                 totals[index] += weight * normalized
                 weightSums[index] += weight
             }

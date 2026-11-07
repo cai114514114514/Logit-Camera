@@ -20,7 +20,9 @@ private let wideStops = [LensStop(focalLength: 13, zoomFactor: 0.5, lens: .ultra
 }
 
 @Test func snapsByLogDistance() {
-    #expect(LensPlanner.nearest(35, in: wideStops)?.focalLength == 24)
+    // 24 与 48 的几何中点约 33.9 mm。
+    #expect(LensPlanner.nearest(30, in: wideStops)?.focalLength == 24)
+    #expect(LensPlanner.nearest(35, in: wideStops)?.focalLength == 48)
     #expect(LensPlanner.nearest(40, in: wideStops)?.focalLength == 48)
     #expect(LensPlanner.nearest(100, in: wideStops)?.focalLength == 120)
 }

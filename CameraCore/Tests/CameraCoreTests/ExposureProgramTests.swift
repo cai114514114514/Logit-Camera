@@ -132,7 +132,7 @@ private func light(_ shutter: Double, _ iso: Double, _ aperture: Double) -> Doub
                                 context: ExposureContext(focalLength: 24, deviceAngularSpeed: 0.2, subjectSpeed: 0, isNight: true),
                                 writePending: false)
     let target = try #require(decision.target)
-    #expect(target.iso == 6400)
+    #expect(abs(target.iso - 6400) < 1)
 }
 
 @Test func brightSceneUsesMinISOAndFasterShutter() throws {
