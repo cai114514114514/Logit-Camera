@@ -98,3 +98,11 @@ private func measurement(score: Double, at time: Double) -> SceneMeasurement {
     let report = s.update(sampleMeasurement(), now: 0, placementError: 0.3, exposureSettled: true)
     #expect(report.statuses[0].available == false)
 }
+
+/// 显著区域只是参考：找不到时不卡住拍摄（室内、静物常见）。
+@Test func missingSalientSubjectIsNeutral() {
+    var s = scorer(samplePlan(subject: .salient, moment: [.deviceStill(maxRadPerSec: 0.1)]))
+    let first = s.update(sampleMeasurement(at: 0, subjects: []), now: 0, placementError: 0, exposureSettled: true)
+    #expect(first.score == 1)
+    #expect(s.update(sampleMeasurement(at: 0.2, subjects: []), now: 0.2, placementError: 0, exposureSettled: true).fireReady)
+}

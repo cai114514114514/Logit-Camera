@@ -226,3 +226,16 @@ private func composing() -> (DirectorScheduler, lastID: Int) {
     #expect(out.command == .callDirector(.landscape, feedback: nil))
     #expect(out.resetMemory)
 }
+
+/// 显著区域主体缺失不触发侦察（否则没有显著区域的场景会每 2 秒侦察一次）。
+@Test func salientPlanDoesNotRescoutWhenSubjectMissing() {
+    var s = DirectorScheduler(defaultPlan: { genre in samplePlan(genre: genre, subject: .salient) })
+    let start = s.handle(.start, now: 0)
+    let planning = s.handle(.scoutReply(id: start.requestID!, scout(.general)), now: 1)
+    var salient = samplePlan(genre: .general, subject: .salient)
+    salient.rationale = "通用"
+    _ = s.handle(.directorReply(id: planning.requestID!, .plan(salient, nil)), now: 2)
+    for t in stride(from: 3.0, through: 10.0, by: 0.1) {
+        #expect(s.handle(.measurement(scene(t, subject: false), waiting), now: t).command == .none)
+    }
+}

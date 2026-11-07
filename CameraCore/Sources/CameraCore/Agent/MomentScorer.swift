@@ -49,6 +49,8 @@ public struct MomentScorer: Sendable {
 
     public let signals: [Trigger]
     private let wantsSubject: Bool
+    /// 方案要求人（脸或人体）：没有人时不拍。显著区域只是参考，缺失不影响。
+    private let wantsPerson: Bool
     private let holdSeconds: Double
     private var startedAt: TimeInterval
     private var perfectSince: TimeInterval?
@@ -58,6 +60,7 @@ public struct MomentScorer: Sendable {
     public init(plan: ShotPlan, startedAt: TimeInterval) {
         signals = plan.moment
         wantsSubject = plan.subject != .none
+        wantsPerson = plan.subject == .face || plan.subject == .body
         holdSeconds = Double(plan.holdMs) / 1000
         self.startedAt = startedAt
     }
@@ -88,7 +91,7 @@ public struct MomentScorer: Sendable {
             if available.contains(where: { $0.score <= 0 }) { score = 0 }
         }
         if !exposureSettled { score *= Self.unsettledScore }
-        if !fresh || (wantsSubject && m.primarySubject == nil) { score = 0 }
+        if !fresh || (wantsPerson && m.primarySubject == nil) { score = 0 }
 
         window.append((now, score))
         window.removeAll { now - $0.time > Self.patience + 1e-9 }

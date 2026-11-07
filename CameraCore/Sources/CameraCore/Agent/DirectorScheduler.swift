@@ -218,8 +218,9 @@ public struct DirectorScheduler: Sendable {
         guard [.scouting, .planning, .composing, .cooldown].contains(phase) else { return SchedulerOutput() }
         var out = SchedulerOutput()
         sceneChangeSince = m.sceneChange > Self.sceneChangeThreshold ? (sceneChangeSince ?? now) : nil
-        let wantsSubject = (plan?.subject ?? .none) != .none
-        subjectLostSince = wantsSubject && m.primarySubject == nil ? (subjectLostSince ?? now) : nil
+        // 只有人（脸、人体）离开才重新侦察；显著区域时有时无，不作为场景变化的依据。
+        let wantsPerson = [.face, .body].contains(plan?.subject ?? .none)
+        subjectLostSince = wantsPerson && m.primarySubject == nil ? (subjectLostSince ?? now) : nil
 
         if phase == .scouting, !scoutSucceeded, now - startedAt >= Self.offlineFallback - 1e-9 {
             phase = .composing
