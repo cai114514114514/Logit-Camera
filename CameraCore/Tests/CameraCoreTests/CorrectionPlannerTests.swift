@@ -41,7 +41,7 @@ private let neutral = ChromaStats(cb: 0, cr: 0, saturation: 0.1, topLuma: 0.4, t
     let sky = ChromaStats(cb: 0, cr: 0, saturation: 0.1, topLuma: 0.85, topCb: 0.06)
     let p = CorrectionPlanner.plan(measurement(chroma: sky), genre: .landscape)
     #expect(abs(p.sky - 0.6) < 1e-9)
-    #expect(p.ops().contains(.skyRecover(amount: 0.6, horizon: 0.45)))
+    #expect(p.ops().contains { if case .skyRecover(let amount, let horizon) = $0 { abs(amount - 0.6) < 1e-9 && horizon == 0.45 } else { false } })
 }
 
 @Test func facesProtectSkin() {
