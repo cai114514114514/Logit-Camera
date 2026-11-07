@@ -27,6 +27,10 @@ final class CameraModel {
     var alternates: [BurstAlternate] = []
     /// 连拍已拍完、正在本机选片。
     var isSelecting = false
+    /// 每次按下快门（手动或自动）加一，驱动取景闪白。
+    var shutterTick = 0
+    /// 选片完成后短暂展示的一组缩略图。
+    var burstPreview: BurstPreview?
     var notice: CameraNotice?
     /// 当前手动参数是否由 AI 设定。用户任何接管都会清除。
     var agentOwnsSettings = false
@@ -180,6 +184,7 @@ final class CameraModel {
             guard canTakePhoto else { return }
             capturePending = true
             notice = nil
+            shutterTick += 1
             capture.capture()
         }
     }
@@ -188,6 +193,7 @@ final class CameraModel {
         guard canTakePhoto else { return }
         capturePending = true
         notice = nil
+        shutterTick += 1
         capture.captureBurst(count: Self.burstCount, crop: crop, ratio: ratio)
     }
 
@@ -198,10 +204,14 @@ final class CameraModel {
         let genre = agent.plan?.genre ?? .general
         isSelecting = true
         Task {
-            let qualities = await Task.detached(priority: .userInitiated) {
+            let (qualities, thumbs) = await Task.detached(priority: .userInitiated) {
                 var result: [FrameQuality] = []
-                for photo in photos { result.append(await BurstAnalyzer.quality(of: photo.data)) }
-                return result
+                var images: [CGImage] = []
+                for photo in photos {
+                    result.append(await BurstAnalyzer.quality(of: photo.data))
+                    if let image = PhotoMetadata.downsample(photo.data, maxPixel: 160) { images.append(image) }
+                }
+                return (result, images)
             }.value
             let best = BurstSelector.best(qualities, genre: genre)
             let scores = BurstSelector.scores(qualities, genre: genre)
@@ -220,6 +230,15 @@ final class CameraModel {
             isSelecting = false
             show(chosen)
             alternates = stored
+            if thumbs.count == photos.count, photos.count > 1 {
+                let preview = BurstPreview(thumbnails: thumbs.map(UIImage.init(cgImage:)), chosen: best)
+                burstPreview = preview
+                agent.picked()
+                Task { [weak self = self] in
+                    try? await Task.sleep(for: .seconds(2.4))
+                    if self?.burstPreview?.id == preview.id { self?.burstPreview = nil }
+                }
+            }
             isSaving = true
             await persistAndSave(chosen)
         }

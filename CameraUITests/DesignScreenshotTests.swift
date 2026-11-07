@@ -2,7 +2,7 @@ import XCTest
 
 /// 设计审阅用：逐个演示场景启动 App 并保存截图。演示模式不发网络请求、不运行调度器。
 final class DesignScreenshotTests: XCTestCase {
-    private let scenarios = ["idle", "scouting", "composing", "capturing", "cooldown", "landscape", "manual", "error", "offline"]
+    private let scenarios = ["idle", "scouting", "composing", "capturing", "cooldown", "picking", "landscape", "manual", "error", "offline"]
 
     @MainActor
     func testCaptureEveryScenario() {

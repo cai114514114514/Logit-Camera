@@ -84,11 +84,28 @@ struct CameraView: View {
 
     // MARK: Viewfinder
 
+    /// AI 觉得「现在拍」有多好（0…1），驱动光的呼吸与流速。
+    private var readiness: Double {
+        switch agent.phase {
+        case .capturing: 1
+        case .planning, .composing: agent.moment?.score ?? 0.3
+        default: 0
+        }
+    }
+
     private var viewfinder: some View {
         CameraPreview(session: model.capture.session,
                       onFocus: focus,
                       markerColor: agent.isEnabled ? UIColor(Theme.Palette.accent) : .white)
             .background(.black)
+            .overlay {
+                // AI 的光：光晕（视线）在画面里，极光沿构图框边缘。
+                if agent.isEnabled {
+                    PresenceLayer(phase: agent.phase, readiness: readiness, subject: agent.subjectBox,
+                                  crop: agent.crop ?? .full)
+                        .transition(.opacity)
+                }
+            }
             .overlay {
                 if agent.isEnabled, let crop = agent.crop {
                     CropOverlay(crop: crop, subject: agent.subjectBox)
@@ -97,10 +114,21 @@ struct CameraView: View {
                 }
             }
             .overlay {
-                ViewfinderFrame(aiActive: agent.isEnabled && agent.phase != .paused && agent.phase != .cooldown,
-                                scanTick: agent.observationTick,
-                                crop: agent.isEnabled ? agent.crop : nil)
+                ViewfinderFrame(aiActive: agent.isEnabled)
             }
+            .overlay { CaptureFlash(trigger: model.shutterTick) }
+            .overlay(alignment: .bottom) {
+                VStack(spacing: 14) {
+                    if let preview = model.burstPreview {
+                        BurstFilmstrip(preview: preview)
+                            .transition(.opacity)
+                    }
+                    if agent.isEnabled { AICaption(text: agent.caption) }
+                }
+                .padding(.bottom, 14)
+                .animation(.easeOut(duration: 0.3), value: model.burstPreview?.id)
+            }
+            .animation(.easeInOut(duration: 0.5), value: agent.isEnabled)
             .overlay(alignment: .topLeading) {
                 if let diagnostics = agent.diagnostics {
                     Text(diagnostics)
@@ -184,8 +212,6 @@ struct CameraView: View {
                       action: notice.offersResume ? ToastAction(title: "恢复 AI", run: resumeAI) : nil)
                     .transition(.opacity.combined(with: .offset(y: 6)))
             }
-            AIAnnotation(agent: agent)
-                .padding(.horizontal, Theme.Metric.gutter)
             if dialOpen {
                 ManualDial(model: model)
                     .transition(.move(edge: .bottom).combined(with: .opacity))

@@ -1,11 +1,11 @@
 #if DEBUG
 import CameraCore
-import Foundation
+import UIKit
 
 /// 仅调试版：`-LogitDemo <scenario>` 直接展示某个 AI 状态，用于不消耗 API 额度的界面截图。
 /// 演示期间 `AgentController.demoLocked` 阻止真实的调度器、感知与网络请求。
 enum DemoScenario: String, CaseIterable {
-    case idle, scouting, composing, capturing, cooldown, landscape, manual, error, offline
+    case idle, scouting, composing, capturing, cooldown, picking, landscape, manual, error, offline
 
     static var current: DemoScenario? {
         let arguments = ProcessInfo.processInfo.arguments
@@ -32,7 +32,7 @@ extension CameraModel {
             Task { @MainActor in
                 while true {
                     agent.setDemo(phase: .scouting, plan: nil, genreName: nil, critique: nil, moment: nil, crop: nil,
-                                  subject: subject, reason: "", tick: true)
+                                  subject: subject, reason: "", tick: true, caption: "在看这是什么场景")
                     try? await Task.sleep(for: .seconds(2))
                 }
             }
@@ -40,21 +40,31 @@ extension CameraModel {
             agentOwnsSettings = true
             agent.setDemo(phase: .composing, plan: portrait, genreName: "人像", critique: demoRubric(2, light: 3, moment: 2),
                           moment: demoMoment(portrait, eyes: 0.3), crop: demoCrop(portrait, subject), subject: subject,
-                          lens: portraitLens, reason: "等她睁眼看向镜头", tick: true)
+                          lens: portraitLens, reason: "等她睁眼看向镜头", tick: true, caption: "等眼睛睁开")
         case .capturing:
             agentOwnsSettings = true
             agent.setDemo(phase: .capturing, plan: portrait, genreName: "人像", critique: demoRubric(3, light: 4, moment: 3),
                           moment: demoMoment(portrait, eyes: 0.9), crop: demoCrop(portrait, subject),
-                          subject: subject, lens: portraitLens, reason: "光线与神情都到位")
+                          subject: subject, lens: portraitLens, reason: "光线与神情都到位", caption: "就是现在")
         case .cooldown:
             agent.setDemo(phase: .cooldown, plan: portrait, genreName: "人像", critique: demoRubric(3, light: 4, moment: 4),
                           moment: demoMoment(portrait, eyes: 0.9), crop: demoCrop(portrait, subject), subject: subject,
-                          lens: portraitLens, reason: "已拍摄")
+                          lens: portraitLens, reason: "已拍摄", caption: "拍好了，换个场景继续")
+        case .picking:
+            agent.setDemo(phase: .cooldown, plan: portrait, genreName: "人像", critique: demoRubric(3, light: 4, moment: 4),
+                          moment: demoMoment(portrait, eyes: 0.9), crop: demoCrop(portrait, subject), subject: subject,
+                          lens: portraitLens, reason: "已拍摄", caption: "挑了眼睛睁开的一张")
+            Task { @MainActor in
+                while true {
+                    burstPreview = BurstPreview(thumbnails: (0..<6).map(demoThumbnail), chosen: 3)
+                    try? await Task.sleep(for: .seconds(3))
+                }
+            }
         case .landscape:
             agentOwnsSettings = true
             agent.setDemo(phase: .composing, plan: landscape, genreName: "风光", critique: demoRubric(2, light: 2, moment: 2),
                           moment: demoMoment(landscape, eyes: nil), crop: demoCrop(landscape, nil), subject: nil,
-                          lens: landscapeLens, reason: "等云影或低角度暖光打亮崖壁")
+                          lens: landscapeLens, reason: "等云影或低角度暖光打亮崖壁", caption: "把手机放平")
         case .manual:
             post("你接管了光圈 · AI 已停止", offersResume: true, sticky: true)
         case .error:
@@ -65,7 +75,20 @@ extension CameraModel {
             let general = demoPlan(.general, rationale: "通用默认意图")
             agent.setDemo(phase: .composing, plan: general, genreName: "通用", critique: nil,
                           moment: demoMoment(general, eyes: nil), crop: demoCrop(general, nil), subject: nil,
-                          lens: landscapeLens, reason: "网络不可用，按通用意图在本机取景", offline: true)
+                          lens: landscapeLens, reason: "网络不可用，按通用意图在本机取景", offline: true,
+                          caption: "没有网络，先按经验拍")
+        }
+    }
+
+    private func demoThumbnail(_ index: Int) -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 68, height: 92)).image { context in
+            let cg = context.cgContext
+            UIColor(white: 0.18 + CGFloat(index) * 0.015, alpha: 1).setFill()
+            cg.fill(CGRect(x: 0, y: 0, width: 68, height: 92))
+            UIColor(red: 0.79, green: 0.72, blue: 0.65, alpha: 1).setFill()
+            cg.fillEllipse(in: CGRect(x: 8, y: 50, width: 52, height: 60))
+            UIColor(red: 0.89, green: 0.78, blue: 0.68, alpha: 1).setFill()
+            cg.fillEllipse(in: CGRect(x: 21 + CGFloat(index % 3) - 1, y: 19, width: 26, height: 30))
         }
     }
 

@@ -26,6 +26,8 @@ final class AgentController {
     private(set) var crop: CameraCore.NormalizedRect?
     private(set) var subjectBox: CameraCore.NormalizedRect?
     private(set) var lens: LensStop?
+    /// AI 此刻要说的一句人话（字幕）；nil 表示不显示。
+    private(set) var caption: String?
     /// 每次真正截取一帧发给模型时加一，驱动取景扫描线。
     private(set) var observationTick = 0
     private(set) var calls = 0
@@ -57,6 +59,8 @@ final class AgentController {
     @ObservationIgnored private var latest: SceneMeasurement?
     /// 感知层操作串行执行，保证 stop / start / resetBaseline 的顺序。
     @ObservationIgnored private var perceptionChain: Task<Void, Never>?
+    @ObservationIgnored private var captions = CaptionDirector()
+    @ObservationIgnored private var pickedAt: TimeInterval?
 
     init(capture: CaptureSession) {
         self.capture = capture
@@ -115,6 +119,8 @@ final class AgentController {
         subjectBox = nil
         moment = nil
         lens = nil
+        caption = nil
+        captions = CaptionDirector()
         status = "AI 待命"
         reason = ""
     }
@@ -126,6 +132,7 @@ final class AgentController {
         request = nil
         perceptionDo { await $0.stop() }
         handle(.pause)
+        caption = nil
     }
 
     func resume() {
@@ -155,6 +162,25 @@ final class AgentController {
 
     func fireRejected() { handle(.fireRejected) }
 
+    /// 选片完成（CameraModel 调用）：字幕说明挑了哪一张。
+    func picked() {
+        guard isEnabled else { return }
+        pickedAt = now
+        refreshCaption()
+    }
+
+    private func refreshCaption() {
+        guard isEnabled, !demoLocked else { return }
+        let waiting = moment?.statuses.first { $0.available && !$0.satisfied }?.trigger.kind
+        let snapshot = CaptionSnapshot(
+            phase: phase, isOffline: isOffline, genre: plan?.genre, genreName: genreName,
+            isDefaultPlan: isDefaultPlan, planID: plan?.id, rationale: plan?.rationale, lens: lens,
+            depth: plan?.exposure.depth, waitingFor: waiting, starved: executor.lastExposure?.starved ?? false,
+            pickedAt: pickedAt)
+        let text = captions.update(snapshot, now: now)
+        if text != caption { caption = text }
+    }
+
     // MARK: - Measurement loop
 
     private func startPerception() {
@@ -183,6 +209,7 @@ final class AgentController {
         if !autoCaptureEnabled { report = report.withoutFire }
         moment = report
         handle(.measurement(m, report))
+        refreshCaption()
     }
 
     // MARK: - Scheduler
@@ -196,6 +223,7 @@ final class AgentController {
         if output.resetMemory { memory = nil }
         if output.resetBaseline { perceptionDo { await $0.resetBaseline() } }
         sync(scheduler)
+        refreshCaption()
         if output.restartMoment { executor.restartMoment(at: now) }
         guard let id = output.requestID else {
             if output.command == .fire { fire() }
@@ -446,7 +474,8 @@ final class AgentController {
     /// 演示模式：直接设置展示字段，不启动调度器、感知与网络。
     func setDemo(phase: AgentPhase, plan: ShotPlan?, genreName: String?, critique: RubricResult?,
                  moment: MomentReport?, crop: CameraCore.NormalizedRect?, subject: CameraCore.NormalizedRect?,
-                 lens: LensStop? = nil, reason: String, faulted: Bool = false, offline: Bool = false, tick: Bool = false) {
+                 lens: LensStop? = nil, reason: String, faulted: Bool = false, offline: Bool = false, tick: Bool = false,
+                 caption: String? = nil) {
         demoLocked = true
         isEnabled = phase != .off
         self.phase = phase
@@ -459,6 +488,7 @@ final class AgentController {
         self.moment = moment
         self.crop = crop
         self.lens = lens
+        self.caption = caption
         subjectBox = subject
         self.reason = reason
         self.faulted = faulted
