@@ -81,4 +81,43 @@ final class InteractionTests: XCTestCase {
         photo.tap()
         XCTAssertTrue(app.descendants(matching: .any)["photo.alternates"].firstMatch.waitForExistence(timeout: 10))
     }
+
+    /// C1：取景实时调色，自定义着色器（暗角）编译或安全跳过后都能正常出片。
+    @MainActor
+    func testCustomShaderLookStillCaptures() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-LogitLook", "vignette"]
+        app.launch()
+        let shutter = app.buttons["camera.shutter"]
+        XCTAssertTrue(shutter.waitForExistence(timeout: 15))
+        Thread.sleep(forTimeInterval: 2)
+        let preview = XCTAttachment(screenshot: app.screenshot())
+        preview.name = "look-vignette-preview"
+        preview.lifetime = .keepAlways
+        add(preview)
+        shutter.tap()
+        let photo = app.buttons["camera.photo"]
+        wait(for: [expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: photo)], timeout: 15)
+        photo.tap()
+        XCTAssertTrue(app.staticTexts["photo.dimensions"].waitForExistence(timeout: 10))
+        let detail = XCTAttachment(screenshot: app.screenshot())
+        detail.name = "look-vignette-photo"
+        detail.lifetime = .keepAlways
+        add(detail)
+    }
+
+    /// C1：暖调配方在取景中实时生效（截图检查）。
+    @MainActor
+    func testWarmLookPreview() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-LogitLook", "warm"]
+        app.launch()
+        XCTAssertTrue(app.buttons["camera.shutter"].waitForExistence(timeout: 15))
+        Thread.sleep(forTimeInterval: 2)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "look-warm-preview"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
 }
