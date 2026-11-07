@@ -219,7 +219,7 @@ struct CameraView: View {
             HStack(spacing: 0) {
                 photoButton.frame(maxWidth: .infinity)
                 ShutterButton(model: model)
-                AIButton(isOn: agent.isEnabled, aligned: agent.phase == .armed || agent.phase == .capturing,
+                AIButton(isOn: agent.isEnabled, aligned: agent.phase == .capturing || (agent.phase == .composing && (agent.moment?.score ?? 0) >= 0.9),
                          action: model.toggleAI)
                     .disabled(model.state.phase != .ready || model.isSaving || model.capturePending)
                     .frame(maxWidth: .infinity)

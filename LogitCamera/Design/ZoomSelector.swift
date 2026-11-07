@@ -1,13 +1,14 @@
 import CameraCore
 import SwiftUI
 
-/// 主摄数字变焦档位。只有一个可用档位时隐藏。
+/// 镜头档位（0.5× 超广角、1× 主摄、2× 主摄裁切、长焦）。只有一个可用档位时隐藏。
 struct ZoomSelector: View {
     let model: CameraModel
 
     private var zoom: Double { Double(model.state.zoom) }
     private var stops: [Double] {
-        ZoomStops.available(min: Double(model.state.minZoom), max: Double(model.state.maxZoom))
+        let lenses = model.state.lensStops.map(\.zoomFactor)
+        return lenses.isEmpty ? ZoomStops.available(min: Double(model.state.minZoom), max: Double(model.state.maxZoom)) : lenses
     }
 
     var body: some View {
@@ -33,7 +34,7 @@ struct ZoomSelector: View {
                     .disabled(!model.state.canCapture)
                     .accessibilityLabel("变焦 \(CameraText.zoom(Float(stop)))")
                     .accessibilityAddTraits(active ? .isSelected : [])
-                    .accessibilityIdentifier("zoom.\(Int(stop))")
+                    .accessibilityIdentifier("zoom.\(stop == stop.rounded() ? String(Int(stop)) : String(stop))")
                 }
             }
             .animation(.snappy(duration: 0.2), value: activeStop)
@@ -46,5 +47,5 @@ struct ZoomSelector: View {
         stops.last { zoom >= $0 - 0.05 } ?? stops.first
     }
 
-    private var origin: ValueOrigin { model.origin(isManual: abs(zoom - 1) > 0.05) }
+    private var origin: ValueOrigin { model.origin(isManual: model.agentOwnsSettings || abs(zoom - 1) > 0.05) }
 }

@@ -1,9 +1,9 @@
 import CameraCore
 import SwiftUI
 
-/// 拍摄条件小标记：满足 ✓（青色），未满足 ○（灰色）。
+/// 时机信号小标记：满足 ✓（青色），未满足 ○（灰色）；数据缺失的信号不显示。
 struct TriggerChips: View {
-    let report: TriggerReport
+    let report: MomentReport
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -18,7 +18,7 @@ struct TriggerChips: View {
 
     private func chips(showSatisfied: Bool) -> some View {
         HStack(spacing: 6) {
-            ForEach(Array(report.statuses.enumerated()), id: \.offset) { _, status in
+            ForEach(Array(report.statuses.filter(\.available).enumerated()), id: \.offset) { _, status in
                 if showSatisfied || !status.satisfied {
                     HStack(spacing: 1) {
                         Text(AgentText.trigger(status.trigger.kind))

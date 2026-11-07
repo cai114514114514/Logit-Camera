@@ -1,7 +1,7 @@
 import CameraCore
 import SwiftUI
 
-/// AI 详情：当前方案、拍摄条件、七项评分与证据、决策记录、自动拍摄开关。Agent 照常运行。
+/// AI 详情：当前意图（焦段、构图、曝光）、时机信号、导演点评、决策记录、自动拍摄开关。Agent 照常运行。
 struct AIDetailSheet: View {
     let model: CameraModel
     @Environment(\.dismiss) private var dismiss
@@ -27,33 +27,39 @@ struct AIDetailSheet: View {
                     .padding(.vertical, 4)
                 }
 
-                if let plan = agent.plan, !agent.isDefaultPlan {
-                    Section("拍摄方案 · \(agent.genreName ?? plan.genre.rawValue)") {
-                        Text(plan.rationale)
+                if let plan = agent.plan {
+                    Section("拍摄意图 · \(agent.genreName ?? plan.genre.rawValue)\(agent.isDefaultPlan ? "（题材默认）" : "")") {
+                        if !agent.isDefaultPlan { Text(plan.rationale) }
+                        LabeledContent("焦段") { Text(AgentText.lens(plan, current: agent.lens)).font(.caption) }
                         LabeledContent("构图") { Text(AgentText.composition(plan.composition)).font(.caption) }
                         LabeledContent("曝光") { Text(AgentText.exposure(plan.exposure)).font(.caption) }
                     }
                 }
 
-                if let report = agent.report, !agent.isDefaultPlan {
-                    Section("拍摄条件（全部满足即拍）") {
-                        ForEach(Array(report.statuses.enumerated()), id: \.offset) { _, status in
+                if let report = agent.moment {
+                    Section {
+                        LabeledContent("时机分") {
+                            Text(String(format: "%.0f%%", report.score * 100)).font(.caption.monospacedDigit())
+                        }
+                        ForEach(Array(report.statuses.filter(\.available).enumerated()), id: \.offset) { _, status in
                             HStack {
                                 Image(systemName: status.satisfied ? "checkmark.circle.fill" : "circle")
                                     .foregroundStyle(status.satisfied ? Theme.Palette.accent : .secondary)
                                 Text(AgentText.trigger(status.trigger.kind))
                                 Spacer()
-                                if let threshold = status.trigger.threshold {
-                                    Text(String(format: "%.2f", threshold)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                }
+                                Text(String(format: "%.2f", status.trigger.threshold)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                             }
                         }
+                    } header: {
+                        Text("时机信号")
+                    } footer: {
+                        Text("信号全部满足时立即拍；否则等待最多 4 秒，拍下这段时间里最好的一刻。")
                     }
                 }
 
-                if let rubric = agent.rubric {
-                    Section("评审评分") {
-                        RubricBars(result: rubric, weights: agent.rubricWeights,
+                if let critique = agent.critique {
+                    Section("导演点评") {
+                        RubricBars(result: critique, weights: agent.rubricWeights,
                                    genreName: agent.plan.flatMap { try? Knowledge.playbook($0.genre).genreCriterion.name } ?? "题材特有项")
                             .padding(.vertical, 4)
                     }
@@ -63,7 +69,7 @@ struct AIDetailSheet: View {
                     Toggle(isOn: Binding(get: { agent.autoCaptureEnabled }, set: model.setAutoCapture)) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("自动拍摄")
-                            Text(agent.autoCaptureEnabled ? "评审放行后，条件全部满足的瞬间拍一张" : "AI 只提示「就绪」，由你按下快门")
+                            Text(agent.autoCaptureEnabled ? "AI 判断时机好时自己连拍一组" : "AI 只调好参数，由你按下快门")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -77,7 +83,7 @@ struct AIDetailSheet: View {
                         .accessibilityIdentifier("camera.rearm")
                     }
                 } footer: {
-                    Text("AI 没有快门权限：它只给出方案和评分，由相机在条件满足时按下快门。每个场景自动拍一张。")
+                    Text("AI 掌控镜头、光圈、快门、ISO 与构图；你随时可以按快门。每次拍摄连拍 6 张，在本机挑出最好的一张。每个场景自动拍一组。")
                 }
 
                 if !agent.history.isEmpty {

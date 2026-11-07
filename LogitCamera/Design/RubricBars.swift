@@ -1,7 +1,7 @@
 import CameraCore
 import SwiftUI
 
-/// 七项量表：分数条 + 证据。
+/// 七项量表点评：分数条 + 证据（只用于展示，不参与是否拍摄的判断）。
 struct RubricBars: View {
     let result: RubricResult
     let weights: [RubricCriterion: Double]
@@ -15,7 +15,7 @@ struct RubricBars: View {
                 Text(String(format: "加权 %.1f / 4", result.weighted(weights)))
                     .font(.system(.subheadline, design: .monospaced, weight: .semibold))
                 Spacer()
-                Text(verdictText).font(.caption).foregroundStyle(verdictColor)
+                Text("导演点评").font(.caption).foregroundStyle(.secondary)
             }
             ForEach(result.scores, id: \.criterion) { score in
                 VStack(alignment: .leading, spacing: 4) {
@@ -47,15 +47,4 @@ struct RubricBars: View {
         criterion == .genre ? genreName : (anchors[criterion]?.name ?? criterion.rawValue)
     }
 
-    private var verdict: Verdict { result.verdict(weights: weights) }
-
-    private var verdictText: String {
-        switch verdict {
-        case .approve: "放行"
-        case .wait: "等待"
-        case .revise: "修改方案"
-        }
-    }
-
-    private var verdictColor: Color { verdict == .approve ? Theme.Palette.accent : .secondary }
 }

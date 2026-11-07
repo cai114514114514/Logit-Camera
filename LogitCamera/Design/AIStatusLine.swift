@@ -1,7 +1,7 @@
 import CameraCore
 import SwiftUI
 
-/// 快门上方的一行 AI 状态：阶段 + 拍摄条件标记。整行是按钮，点开 AI 详情。
+/// 快门上方的一行 AI 状态：阶段 + 时机信号标记。整行是按钮，点开 AI 详情。
 struct AIStatusLine: View {
     let agent: AgentController
     let onOpen: () -> Void
@@ -17,7 +17,7 @@ struct AIStatusLine: View {
                     Text("· \(genre)").foregroundStyle(Theme.Palette.inkSecondary)
                 }
                 Spacer(minLength: 8)
-                if agent.isEnabled, let report = agent.report, !agent.isDefaultPlan {
+                if agent.isEnabled, let report = agent.moment, [.planning, .composing].contains(agent.phase) {
                     TriggerChips(report: report)
                 }
                 Image(systemName: "chevron.up")
@@ -33,7 +33,7 @@ struct AIStatusLine: View {
         }
         .buttonStyle(.plain)
         .hudTypeSize()
-        .accessibilityLabel(["AI", stageText, AgentText.waiting(agent.report) ?? "", agent.reason]
+        .accessibilityLabel(["AI", stageText, AgentText.waiting(agent.moment) ?? "", agent.reason]
             .filter { !$0.isEmpty }.joined(separator: "。"))
         .accessibilityValue("第 \(agent.calls) 轮")
         .accessibilityHint("打开 AI 详情")
@@ -47,8 +47,8 @@ struct AIStatusLine: View {
 
     @ViewBuilder private var dot: some View {
         let phase = agent.phase
-        let looking = agent.isEnabled && [.scouting, .planning, .reviewing].contains(phase)
-        let armed = phase == .armed || phase == .capturing
+        let looking = agent.isEnabled && [.scouting, .planning].contains(phase)
+        let armed = phase == .capturing || (phase == .composing && (agent.moment?.score ?? 0) >= 0.9)
         let color: Color = agent.faulted ? Theme.Palette.warning
             : (agent.isEnabled && phase != .paused && phase != .cooldown ? Theme.Palette.accent : Theme.Palette.inkTertiary)
         Image(systemName: agent.faulted ? "exclamationmark.circle.fill" : (armed ? "smallcircle.filled.circle" : "circle.fill"))
