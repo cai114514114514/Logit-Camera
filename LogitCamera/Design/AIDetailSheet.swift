@@ -27,6 +27,27 @@ struct AIDetailSheet: View {
                     .padding(.vertical, 4)
                 }
 
+                Section {
+                    Toggle(isOn: Binding(get: { agent.autoCaptureEnabled }, set: model.setAutoCapture)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("自动拍摄")
+                            Text(agent.autoCaptureEnabled ? "AI 判断时机好时自己连拍一组" : "AI 只调好参数，由你按下快门")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("camera.autoCapture")
+                    if agent.phase == .cooldown {
+                        Button {
+                            model.armAutoCapture()
+                        } label: {
+                            Label("再拍一张", systemImage: "camera")
+                        }
+                        .accessibilityIdentifier("camera.rearm")
+                    }
+                } footer: {
+                    Text("AI 掌控镜头、光圈、快门、ISO 与构图；你随时可以按快门。每次拍摄连拍 6 张，在本机挑出最好的一张。每个场景自动拍一组。")
+                }
+
                 if let plan = agent.plan {
                     Section("拍摄意图 · \(agent.genreName ?? plan.genre.rawValue)\(agent.isDefaultPlan ? "（题材默认）" : "")") {
                         if !agent.isDefaultPlan { Text(plan.rationale) }
@@ -63,27 +84,6 @@ struct AIDetailSheet: View {
                                    genreName: agent.plan.flatMap { try? Knowledge.playbook($0.genre).genreCriterion.name } ?? "题材特有项")
                             .padding(.vertical, 4)
                     }
-                }
-
-                Section {
-                    Toggle(isOn: Binding(get: { agent.autoCaptureEnabled }, set: model.setAutoCapture)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("自动拍摄")
-                            Text(agent.autoCaptureEnabled ? "AI 判断时机好时自己连拍一组" : "AI 只调好参数，由你按下快门")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .accessibilityIdentifier("camera.autoCapture")
-                    if agent.phase == .cooldown {
-                        Button {
-                            model.armAutoCapture()
-                        } label: {
-                            Label("再拍一张", systemImage: "camera")
-                        }
-                        .accessibilityIdentifier("camera.rearm")
-                    }
-                } footer: {
-                    Text("AI 掌控镜头、光圈、快门、ISO 与构图；你随时可以按快门。每次拍摄连拍 6 张，在本机挑出最好的一张。每个场景自动拍一组。")
                 }
 
                 if !agent.history.isEmpty {

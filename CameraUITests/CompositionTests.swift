@@ -70,6 +70,8 @@ final class CompositionTests: XCTestCase {
         XCTAssertTrue(status.waitForExistence(timeout: 5))
         status.tap()
         let autoCapture = app.switches["camera.autoCapture"]
+        // 开启后 AI 可能立刻自动连拍，那一刻的点按可能落空：面板没出现就再点一次。
+        if !autoCapture.waitForExistence(timeout: 3) { status.tap() }
         if autoCapture.waitForExistence(timeout: 5), autoCapture.value as? String == "1" { autoCapture.tap() }
         app.buttons["完成"].tap()
         let readout = app.descendants(matching: .any)["camera.agent"].firstMatch
@@ -87,6 +89,9 @@ final class CompositionTests: XCTestCase {
         button.tap()
         XCTAssertFalse(button.isSelected)
         XCTAssertEqual(button.value as? String, "已关闭")
+        // AI 可能选了超广角或长焦（固定光圈）：回到 1× 主摄再检查可变光圈。
+        let main = app.buttons["zoom.1"]
+        if main.waitForExistence(timeout: 3) { main.tap(); Thread.sleep(forTimeInterval: 1) }
         app.buttons["camera.controls"].tap()
         XCTAssertTrue(app.buttons["aperture.4.0"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["aperture.4.0"].isEnabled)

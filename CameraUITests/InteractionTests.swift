@@ -54,7 +54,7 @@ final class InteractionTests: XCTestCase {
         app.descendants(matching: .any)["camera.agent"].firstMatch.tap()
         let auto = app.switches["camera.autoCapture"]
         XCTAssertTrue(auto.waitForExistence(timeout: 5))
-        if (auto.value as? String) == "1" { auto.switches.firstMatch.tap() }
+        if (auto.value as? String) == "1" { auto.tap() }
         app.buttons["完成"].firstMatch.tap()
         let shutter = app.buttons["camera.shutter"]
         XCTAssertTrue(shutter.waitForExistence(timeout: 5))
