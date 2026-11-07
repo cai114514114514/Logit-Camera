@@ -1,3 +1,4 @@
+import CameraCore
 import CoreTransferable
 import SwiftUI
 import UniformTypeIdentifiers
@@ -14,6 +15,8 @@ struct PhotoDetailView: View {
     @Bindable var model: CameraModel
     @Environment(\.dismiss) private var dismiss
     @State private var confirmsDiscard = false
+    @State private var selectedAlternate: Int?
+    @State private var thumbnails: [Int: UIImage] = [:]
 
     var body: some View {
         NavigationStack {
@@ -29,6 +32,7 @@ struct PhotoDetailView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     exif(photo)
+                    if model.alternates.count > 1 { alternatesStrip }
                     actions(photo)
 
                     if let notice = model.notice {
@@ -58,6 +62,74 @@ struct PhotoDetailView: View {
         }
         .tint(Theme.Palette.accent)
         .preferredColorScheme(.dark)
+    }
+
+    /// 连拍备选：AI 选中的那张标出来；选另一张后可以「换成这张」（也存入相册）。
+    private var alternatesStrip: some View {
+        VStack(spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(model.alternates) { alternate in
+                        Button { selectedAlternate = alternate.index } label: {
+                            thumbnail(alternate)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(alternate.isAIChoice ? "第 \(alternate.index + 1) 张，AI 选择" : "第 \(alternate.index + 1) 张")
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .accessibilityIdentifier("photo.alternates")
+            if let index = selectedAlternate, let alternate = model.alternates.first(where: { $0.index == index }),
+               !alternate.isAIChoice {
+                Button {
+                    Task { await model.saveAlternate(alternate) }
+                } label: {
+                    Label("换成这张", systemImage: "arrow.triangle.2.circlepath").frame(minHeight: 36)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("photo.useAlternate")
+            }
+        }
+        .task(id: model.alternates.map(\.url)) { await loadThumbnails() }
+    }
+
+    private func thumbnail(_ alternate: BurstAlternate) -> some View {
+        let selected = selectedAlternate == alternate.index || (selectedAlternate == nil && alternate.isAIChoice)
+        return ZStack(alignment: .bottom) {
+            Group {
+                if let image = thumbnails[alternate.index] {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    Rectangle().fill(Theme.Palette.hairline)
+                }
+            }
+            .frame(width: 56, height: 74)
+            .clipped()
+            if alternate.isAIChoice {
+                Text("AI 选择")
+                    .font(.system(size: 9, weight: .semibold))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Theme.Palette.accent, in: Capsule())
+                    .foregroundStyle(.black)
+                    .padding(.bottom, 3)
+            }
+        }
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(selected ? Theme.Palette.accent : .clear, lineWidth: 2))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func loadThumbnails() async {
+        let urls = model.alternates.map { ($0.index, $0.url) }
+        let loaded = await Task.detached(priority: .userInitiated) {
+            urls.compactMap { index, url -> (Int, CGImage)? in
+                guard let data = try? Data(contentsOf: url), let image = PhotoMetadata.downsample(data, maxPixel: 200)
+                else { return nil }
+                return (index, image)
+            }
+        }.value
+        thumbnails = Dictionary(uniqueKeysWithValues: loaded.map { ($0.0, UIImage(cgImage: $0.1)) })
     }
 
     private func exif(_ photo: CapturedPhoto) -> some View {

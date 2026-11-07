@@ -23,6 +23,10 @@ final class CameraModel {
     var capturePending = false
     var photoSaved = false
     var archivedURL: URL?
+    /// 最近一张照片所在连拍组的备选（含 AI 选中的那张）。
+    var alternates: [BurstAlternate] = []
+    /// 连拍已拍完、正在本机选片。
+    var isSelecting = false
     var notice: CameraNotice?
     /// 当前手动参数是否由 AI 设定。用户任何接管都会清除。
     var agentOwnsSettings = false
@@ -33,6 +37,10 @@ final class CameraModel {
     private var apiKey: String?
     private var foreground = false
     private var automaticCapturePending = false
+    /// 每组连拍一个序号；只有最新一组的选片结果更新界面。
+    private var burstSequence = 0
+    /// AI 开启时每次拍摄的连拍张数。
+    static let burstCount = 6
     private var lastPhase: CameraPhase = .starting
     @ObservationIgnored private var demoApplied = false
 
@@ -51,12 +59,12 @@ final class CameraModel {
         capture.observe { [weak self] event in
             Task { @MainActor in self?.receive(event) }
         }
-        agent.onFire = { [weak self] crop in self?.takeAutomaticPhoto(crop: crop) ?? false }
-        agent.onPlanApplied = { [weak self] plan in
-            // AI 方案决定画幅；读数标为 AI 设定。
+        agent.onFire = { [weak self] crop, ratio in self?.takeAutomaticPhoto(crop: crop, ratio: ratio) ?? false }
+        agent.onPlanApplied = { [weak self] _ in
+            // AI 方案决定镜头、曝光与画幅；读数标为 AI 设定。
             self?.agentOwnsSettings = true
-            self?.capture.setRatio(plan.composition.ratio)
         }
+        Task.detached(priority: .background) { BurstStore.purge() }
     }
 
     func activate() {
@@ -108,7 +116,12 @@ final class CameraModel {
 
     func toggleAI() {
         if agent.isEnabled || agent.faulted { agent.stop(); return }
-        guard let apiKey else { showsSettings = true; return }
+        var key = apiKey
+        #if DEBUG
+        // 离线导演不需要真实密钥。
+        if ProcessInfo.processInfo.arguments.contains("-LogitOfflineDirector") { key = key ?? "offline" }
+        #endif
+        guard let apiKey = key else { showsSettings = true; return }
         guard state.canCapture, !isSaving else { post("相机就绪后即可开启 AI。"); return }
         notice = nil
         agent.enable(key: apiKey)
@@ -146,13 +159,11 @@ final class CameraModel {
     func setAutoCapture(_ enabled: Bool) { agent.setAutoCapture(enabled) }
     /// 冷却中「再拍一张」。
     func armAutoCapture() { agent.rearm() }
-    /// 就绪时点快门：本场景不再自动拍摄。
-    func cancelAutoCapture() { agent.disarm() }
 
-    private func takeAutomaticPhoto(crop: CameraCore.NormalizedRect?) -> Bool {
+    private func takeAutomaticPhoto(crop: CameraCore.NormalizedRect?, ratio: FrameRatio) -> Bool {
         guard foreground, canTakePhoto else { return false }
         automaticCapturePending = true
-        takePhoto(crop: crop)
+        shoot(crop: crop, ratio: ratio)
         return true
     }
 
@@ -161,16 +172,71 @@ final class CameraModel {
         agent.resume()
     }
 
-    /// 快门：AI 开启时按 AI 的裁切框拍（所见即所得），否则按画幅居中裁切。
+    /// 快门永远立即拍摄：AI 开启时按 AI 的裁切框与画幅连拍并在本机选片（所见即所得），否则单张按画幅居中裁切。
     func takePhoto() {
-        takePhoto(crop: agent.isEnabled ? agent.crop : nil)
+        if agent.isEnabled {
+            shoot(crop: agent.crop, ratio: agent.plan?.composition.ratio ?? state.ratio)
+        } else {
+            guard canTakePhoto else { return }
+            capturePending = true
+            notice = nil
+            capture.capture()
+        }
     }
 
-    private func takePhoto(crop: CameraCore.NormalizedRect?) {
+    private func shoot(crop: CameraCore.NormalizedRect?, ratio: FrameRatio) {
         guard canTakePhoto else { return }
         capturePending = true
         notice = nil
-        capture.capture(crop: crop)
+        capture.captureBurst(count: Self.burstCount, crop: crop, ratio: ratio)
+    }
+
+    /// 连拍拍完：先让 AI 进入冷却、释放快门，再在后台选片；最好的一张走正常保存流程，其余存为备选。
+    private func select(_ photos: [CapturedPhoto], automatic: Bool) {
+        burstSequence += 1
+        let sequence = burstSequence
+        let genre = agent.plan?.genre ?? .general
+        isSelecting = true
+        Task {
+            let qualities = await Task.detached(priority: .userInitiated) {
+                var result: [FrameQuality] = []
+                for photo in photos { result.append(await BurstAnalyzer.quality(of: photo.data)) }
+                return result
+            }.value
+            let best = BurstSelector.best(qualities, genre: genre)
+            let scores = BurstSelector.scores(qualities, genre: genre)
+            let chosen = photos[min(best, photos.count - 1)]
+            agent.record(photoID: chosen.id, automatic: automatic)
+            let stored: [BurstAlternate] = await Task.detached(priority: .utility) {
+                guard photos.count > 1 else { return [] }
+                try? BurstStore.save(photos, chosen: best, photoID: chosen.id, genre: genre, scores: scores)
+                return BurstStore.load(photoID: chosen.id)
+            }.value
+            guard sequence == burstSequence else {
+                // 更新的一组已经到了：这一组只保存，不改界面。
+                Task { try? await PhotoLibrary.save(chosen) }
+                return
+            }
+            isSelecting = false
+            show(chosen)
+            alternates = stored
+            isSaving = true
+            await persistAndSave(chosen)
+        }
+    }
+
+    /// 把备选里的另一张也存入相册，并记下用户的选择（子项目 4 学习用）。
+    func saveAlternate(_ alternate: BurstAlternate) async {
+        guard let current = latestPhoto, let data = try? Data(contentsOf: alternate.url) else { return }
+        let photo = CapturedPhoto(data: data, aperture: current.aperture, iso: current.iso,
+                                  exposureSeconds: current.exposureSeconds)
+        do {
+            try await PhotoLibrary.save(photo)
+            await CaptureRecordStore.shared.setChosen(alternate.index, for: current.id)
+            post("已把这张也存入照片图库")
+        } catch {
+            post(error.localizedDescription, warning: true)
+        }
     }
 
     func saveLatestPhoto() async {
@@ -216,6 +282,16 @@ final class CameraModel {
         notice = nil
     }
 
+    private func show(_ photo: CapturedPhoto) {
+        latestPhoto = photo
+        thumbnail = nil
+        preview = nil
+        photoPixelSize = nil
+        loadPreviews(for: photo)
+        photoSaved = false
+        archivedURL = nil
+    }
+
     /// 缩略图与详情预览在后台用 ImageIO 生成，主线程不解码整张照片。
     private func loadPreviews(for photo: CapturedPhoto) {
         let data = photo.data
@@ -253,18 +329,18 @@ final class CameraModel {
             capturePending = false
             if automaticCapturePending { agent.fireRejected(); automaticCapturePending = false }
         case .photo(let photo):
-            agent.captured(photoID: photo.id, automatic: automaticCapturePending)
             automaticCapturePending = false
             capturePending = false
-            latestPhoto = photo
-            thumbnail = nil
-            preview = nil
-            photoPixelSize = nil
-            loadPreviews(for: photo)
-            photoSaved = false
-            archivedURL = nil
+            alternates = []
+            show(photo)
             isSaving = true
             Task { await persistAndSave(photo) }
+        case .burst(let photos):
+            let automatic = automaticCapturePending
+            automaticCapturePending = false
+            capturePending = false
+            agent.captured(automatic: automatic)
+            select(photos, automatic: automatic)
         }
     }
 }
