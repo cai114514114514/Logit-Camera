@@ -15,8 +15,8 @@ final class ShaderCompiler: @unchecked Sendable {
     private var pending: Set<String> = []
     private let log = Logger(subsystem: "com.logitcamera", category: "shader")
 
-    /// 已编译则返回；否则在后台开始编译并返回 nil。
-    func pipeline(for body: String) -> MTLComputePipelineState? {
+    /// 已编译则返回；否则在后台开始编译并返回 nil。`trusted` 为内置着色器，跳过沙箱校验。
+    func pipeline(for body: String, trusted: Bool = false) -> MTLComputePipelineState? {
         let state = lock.withLock { () -> (MTLComputePipelineState?, Bool) in
             if let cached = cache[body] { return (cached, false) }
             if failed.contains(body) || pending.contains(body) { return (nil, false) }
@@ -24,24 +24,24 @@ final class ShaderCompiler: @unchecked Sendable {
             return (nil, true)
         }
         if state.1 {
-            DispatchQueue.global(qos: .userInitiated).async { _ = self.compile(body) }
+            DispatchQueue.global(qos: .userInitiated).async { _ = self.compile(body, trusted: trusted) }
         }
         return state.0
     }
 
     /// 同步编译（成片使用）。
-    func pipelineNow(for body: String) -> MTLComputePipelineState? {
+    func pipelineNow(for body: String, trusted: Bool = false) -> MTLComputePipelineState? {
         if let cached = lock.withLock({ cache[body] }) { return cached }
         if lock.withLock({ failed.contains(body) }) { return nil }
-        return compile(body)
+        return compile(body, trusted: trusted)
     }
 
     func didFail(_ body: String) -> Bool { lock.withLock { failed.contains(body) } }
 
-    private func compile(_ body: String) -> MTLComputePipelineState? {
+    private func compile(_ body: String, trusted: Bool) -> MTLComputePipelineState? {
         defer { _ = lock.withLock { pending.remove(body) } }
         do {
-            try ShaderSandbox.validate(body)
+            if !trusted { try ShaderSandbox.validate(body) }
             guard let device else { throw LookValidationError.shader("没有 Metal 设备") }
             let library = try device.makeLibrary(source: ShaderSandbox.wrap(body), options: nil)
             guard let function = library.makeFunction(name: "logit_custom") else {

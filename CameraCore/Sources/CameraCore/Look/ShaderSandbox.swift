@@ -23,6 +23,21 @@ public enum ShaderSandbox {
         return k;
     }
 
+    /// 色相段权重：与段中心（度）的环形距离在 width 内线性衰减。
+    static float logit_band(float hueDegrees, float center, float width) {
+        float d = abs(fmod(hueDegrees - center + 540.0, 360.0) - 180.0);
+        return max(0.0, 1.0 - d / width);
+    }
+
+    /// 平滑值噪声（双线性插值的哈希），用于颗粒。
+    static float logit_noise(float2 p) {
+        float2 i = floor(p), f = fract(p);
+        float2 u = f * f * (3.0 - 2.0 * f);
+        float a = logit_hash(i), b = logit_hash(i + float2(1.0, 0.0));
+        float c = logit_hash(i + float2(0.0, 1.0)), d = logit_hash(i + float2(1.0, 1.0));
+        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    }
+
     /// RGB → HSL（各 0…1）。
     static float3 logit_rgb2hsl(float3 c) {
         float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));

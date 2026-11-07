@@ -27,13 +27,17 @@ struct PhotoDetailView: View {
     @State private var confirmsDiscard = false
     @State private var selectedAlternate: Int?
     @State private var thumbnails: [Int: UIImage] = [:]
+    @State private var relook: LookRecipe?
+    @State private var relookPreview: UIImage?
+    @State private var lookThumbnails: [String: UIImage] = [:]
+    @State private var savingLook = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 18) {
                 if let photo = model.latestPhoto {
                     Group {
-                        if let image = model.preview ?? model.thumbnail {
+                        if let image = relookPreview ?? model.preview ?? model.thumbnail {
                             Image(uiImage: image).resizable().scaledToFit()
                         } else {
                             ProgressView().tint(Theme.Palette.inkSecondary)
@@ -42,6 +46,7 @@ struct PhotoDetailView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     exif(photo)
+                    if model.latestOriginal != nil { relookStrip }
                     if model.alternates.count > 1 { alternatesStrip }
                     actions(photo)
 
@@ -72,6 +77,80 @@ struct PhotoDetailView: View {
         }
         .tint(Theme.Palette.accent)
         .preferredColorScheme(.dark)
+    }
+
+    /// 拍后换滤镜：基于这张照片的原片重新渲染；满意后另存为新照片（原来那张保留）。
+    private var relookStrip: some View {
+        VStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(model.presets + model.myLooks, id: \.name) { look in
+                        Button { choose(look) } label: {
+                            VStack(spacing: 3) {
+                                Group {
+                                    if let image = lookThumbnails[look.name] {
+                                        Image(uiImage: image).resizable().scaledToFill()
+                                    } else {
+                                        Rectangle().fill(Theme.Palette.hairline)
+                                    }
+                                }
+                                .frame(width: 44, height: 58)
+                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                                .overlay(RoundedRectangle(cornerRadius: 5)
+                                    .stroke(relook?.name == look.name ? Color.white : .clear, lineWidth: 2))
+                                Text(look.name).font(.system(size: 10)).lineLimit(1).frame(width: 52)
+                                    .foregroundStyle(relook?.name == look.name ? Theme.Palette.ink : Theme.Palette.inkSecondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("detail.look.\(look.name)")
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .accessibilityIdentifier("detail.looks")
+            if let relook {
+                Button {
+                    savingLook = true
+                    Task {
+                        await model.saveAsNewPhoto(look: relook)
+                        savingLook = false
+                    }
+                } label: {
+                    Label(savingLook ? "正在保存…" : "用「\(relook.name)」另存为新照片", systemImage: "plus.square.on.square")
+                        .frame(minHeight: 36)
+                }
+                .buttonStyle(.bordered)
+                .disabled(savingLook)
+                .accessibilityIdentifier("detail.saveLook")
+            }
+        }
+        .task(id: model.latestOriginal?.id) { await loadLookThumbnails() }
+    }
+
+    private func choose(_ look: LookRecipe) {
+        relook = look
+        guard let data = model.latestOriginal?.data else { return }
+        Task {
+            let image = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                guard let source = LookThumbnails.source(from: data, longSide: 1600) else { return nil }
+                return LookThumbnails.render(source, look)
+            }.value
+            if relook?.name == look.name { relookPreview = image }
+        }
+    }
+
+    private func loadLookThumbnails() async {
+        guard let data = model.latestOriginal?.data else { return }
+        relook = nil
+        relookPreview = nil
+        let looks = model.presets + model.myLooks
+        lookThumbnails = await Task.detached(priority: .utility) { () -> [String: UIImage] in
+            guard let source = LookThumbnails.source(from: data, longSide: 120) else { return [:] }
+            var result: [String: UIImage] = [:]
+            for look in looks { result[look.name] = LookThumbnails.render(source, look) }
+            return result
+        }.value
     }
 
     /// 连拍备选：AI 选中的那张标出来；选另一张后可以「换成这张」（也存入相册）。

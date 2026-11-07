@@ -17,6 +17,8 @@ struct HUDReadoutBar: View {
                 .contentShape(Rectangle())
                 .onTapGesture { toggleDial() }
             Spacer(minLength: 2)
+            iconButton("camera.filters", label: "滤镜", selected: model.showsLookStrip, action: toggleLooks)
+                .accessibilityIdentifier("camera.looks")
             iconButton("dial.low", label: "手动光圈与曝光", selected: dialOpen, action: toggleDial)
                 .accessibilityIdentifier("camera.controls")
             iconButton("gearshape", label: "设置", selected: false) { model.showsSettings = true }
@@ -28,7 +30,17 @@ struct HUDReadoutBar: View {
     }
 
     private func toggleDial() {
-        withAnimation(.snappy(duration: 0.25)) { dialOpen.toggle() }
+        withAnimation(.snappy(duration: 0.25)) {
+            dialOpen.toggle()
+            if dialOpen { model.showsLookStrip = false }
+        }
+    }
+
+    private func toggleLooks() {
+        withAnimation(.snappy(duration: 0.25)) {
+            model.showsLookStrip.toggle()
+            if model.showsLookStrip { dialOpen = false }
+        }
     }
 
     private var readout: some View {

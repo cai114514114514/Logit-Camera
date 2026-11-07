@@ -1,3 +1,4 @@
+import CameraCore
 import CoreImage
 import Metal
 
@@ -14,8 +15,9 @@ final class CustomShaderKernel: CIImageProcessorKernel {
               let pipeline = arguments?["pipeline"] as? MTLComputePipelineState,
               let encoder = commandBuffer.makeComputeCommandEncoder() else { return }
         var params = (arguments?["params"] as? [Float]) ?? []
-        params += Array(repeating: 0, count: max(0, 8 - params.count))
-        params = Array(params.prefix(8)) + [(arguments?["time"] as? Float) ?? 0]
+        let count = ShaderSandbox.paramCount
+        params += Array(repeating: 0, count: max(0, count - params.count))
+        params = Array(params.prefix(count)) + [(arguments?["time"] as? Float) ?? 0]
         let full = (arguments?["full"] as? CGRect) ?? output.region
         let region = output.region
         // uv 以整张图为参照、左上原点。

@@ -59,6 +59,7 @@ struct CameraView: View {
         .sheet(isPresented: $model.showsPhoto) { PhotoDetailView(model: model) }
         .sheet(isPresented: $model.showsSettings) { SettingsView(model: model) }
         .sheet(isPresented: $model.showsAgentDetail) { AIDetailSheet(model: model) }
+        .sheet(isPresented: $model.showsLookAdjust) { LookAdjustSheet(model: model) }
     }
 
     // MARK: Layout
@@ -215,6 +216,9 @@ struct CameraView: View {
             if dialOpen {
                 ManualDial(model: model)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if model.showsLookStrip {
+                LookStrip(model: model)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
                 ZoomSelector(model: model)
                     .transition(.opacity)
@@ -223,6 +227,7 @@ struct CameraView: View {
         .padding(.bottom, 6)
         .animation(.snappy(duration: 0.25), value: model.notice)
         .animation(.snappy(duration: 0.25), value: dialOpen)
+        .animation(.snappy(duration: 0.25), value: model.showsLookStrip)
     }
 
     private func resumeAI() {

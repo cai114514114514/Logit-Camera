@@ -31,8 +31,19 @@ final class CameraModel {
     var shutterTick = 0
     /// 选片完成后短暂展示的一组缩略图。
     var burstPreview: BurstPreview?
-    /// 当前滤镜配方：取景实时生效，成片按快门按下那一刻的配方渲染。
-    var look: LookRecipe = .identity
+    /// 当前生效的滤镜配方（预设 + 微调 + 强度）：取景实时生效，成片按快门按下那一刻的配方渲染。
+    private(set) var look: LookRecipe = .identity
+    /// 内置预设与「我的滤镜」。
+    let presets: [LookRecipe] = Knowledge.looks()
+    private(set) var myLooks: [LookRecipe] = LookLibrary.load()
+    /// 当前选择的滤镜（预设或我的滤镜）。
+    private(set) var lookBase: LookRecipe = .identity
+    var lookAdjustments = LookAdjustments() { didSet { refreshLook() } }
+    var lookStrength = 1.0 { didSet { refreshLook() } }
+    var showsLookStrip = false
+    var showsLookAdjust = false
+    /// 最近一张照片调色前的原片（照片详情里换滤镜用）。
+    private(set) var latestOriginal: CapturedPhoto?
     /// 单张拍摄（AI 关闭）按下快门时冻结的配方。
     @ObservationIgnored private var pendingLook: LookRecipe = .identity
     var notice: CameraNotice?
@@ -73,8 +84,15 @@ final class CameraModel {
             self?.agentOwnsSettings = true
         }
         Task.detached(priority: .background) { BurstStore.purge() }
+        BuiltinShaders.warmUp()
         #if DEBUG
-        if let debugLook = DebugLooks.current { look = debugLook }
+        if let debugLook = DebugLooks.current { selectLook(debugLook) }
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "-LogitPreset"), index + 1 < arguments.count,
+           let preset = presets.first(where: { $0.name == arguments[index + 1] }) {
+            selectLook(preset)
+            showsLookStrip = true
+        }
         #endif
     }
 
@@ -226,6 +244,7 @@ final class CameraModel {
             let scores = BurstSelector.scores(qualities, genre: genre)
             let original = photos[min(best, photos.count - 1)]
             let chosen = await Self.graded(original, look: look)
+            if sequence == burstSequence { latestOriginal = original }
             agent.record(photoID: chosen.id, automatic: automatic)
             let stored: [BurstAlternate] = await Task.detached(priority: .utility) {
                 guard photos.count > 1 else { return [] }
@@ -311,6 +330,58 @@ final class CameraModel {
         notice = nil
     }
 
+    // MARK: - Looks
+
+    func selectLook(_ recipe: LookRecipe) {
+        lookBase = recipe
+        lookAdjustments = .zero
+        lookStrength = 1
+        refreshLook()
+    }
+
+    private func refreshLook() {
+        var recipe = lookAdjustments.apply(to: lookBase)
+        recipe.strength = lookBase.strength * lookStrength
+        if lookBase.isIdentity && !lookAdjustments.isZero { recipe.name = "原片 · 调整" }
+        look = recipe
+    }
+
+    func saveMyLook(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !presets.contains(where: { $0.name == trimmed }) else {
+            post("这个名字已被内置滤镜使用，换一个吧。", warning: true)
+            return
+        }
+        var recipe = look
+        recipe.name = trimmed
+        recipe.strength = min(max(recipe.strength, 0), 1)
+        guard (try? recipe.validate()) != nil else { post("这个滤镜无法保存。", warning: true); return }
+        myLooks.removeAll { $0.name == trimmed }
+        myLooks.append(recipe)
+        LookLibrary.save(myLooks)
+        selectLook(recipe)
+        post("已保存「\(trimmed)」")
+    }
+
+    func deleteMyLook(named name: String) {
+        myLooks.removeAll { $0.name == name }
+        LookLibrary.save(myLooks)
+        if lookBase.name == name { selectLook(.identity) }
+    }
+
+    /// 照片详情里换滤镜后另存为新照片（原来那张保留）。
+    func saveAsNewPhoto(look recipe: LookRecipe) async {
+        guard let original = latestOriginal else { return }
+        let rendered = await Self.graded(CapturedPhoto(data: original.data, aperture: original.aperture, iso: original.iso,
+                                                       exposureSeconds: original.exposureSeconds), look: recipe)
+        do {
+            try await PhotoLibrary.save(rendered)
+            post("已用「\(recipe.name)」另存为新照片")
+        } catch {
+            post(error.localizedDescription, warning: true)
+        }
+    }
+
     /// 按配方渲染成片（后台）；配方为空或渲染失败时返回原片，照片照常保存。
     nonisolated private static func graded(_ photo: CapturedPhoto, look: LookRecipe) async -> CapturedPhoto {
         guard !look.isIdentity else { return photo }
@@ -373,6 +444,7 @@ final class CameraModel {
             isSaving = true
             Task {
                 let photo = await Self.graded(original, look: look)
+                latestOriginal = original
                 show(photo)
                 await persistAndSave(photo)
             }
