@@ -10,6 +10,7 @@ final class DesignScreenshotTests: XCTestCase {
         for scenario in scenarios {
             let app = XCUIApplication()
             app.launchArguments = ["-LogitDemo", scenario]
+            app.launchArguments.append("-LogitNoLibrary")
             app.launch()
             XCTAssertTrue(app.buttons["camera.ai"].waitForExistence(timeout: 15), scenario)
             Thread.sleep(forTimeInterval: 2.5)
@@ -53,6 +54,7 @@ final class DesignScreenshotTests: XCTestCase {
     func testPerceptionProbe() {
         let app = XCUIApplication()
         app.launchArguments = ["-LogitPerceptionOnly"]
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         let diagnostics = app.staticTexts["camera.diagnostics"]
         XCTAssertTrue(diagnostics.waitForExistence(timeout: 15))

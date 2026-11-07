@@ -5,6 +5,7 @@ final class CompositionTests: XCTestCase {
     func testPreviewRatiosMatchTheirSelectedFrames() {
         continueAfterFailure = false
         let app = XCUIApplication()
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         XCTAssertTrue(app.buttons["camera.ratio"].waitForExistence(timeout: 15))
         let preview = app.descendants(matching: .any)["camera.preview"].firstMatch
@@ -32,6 +33,7 @@ final class CompositionTests: XCTestCase {
     func testAgentAutomaticallyCapturesOnePhotoWhenReady() {
         continueAfterFailure = false
         let app = XCUIApplication()
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         let button = app.buttons["camera.ai"]
         XCTAssertTrue(button.waitForExistence(timeout: 15))
@@ -59,6 +61,7 @@ final class CompositionTests: XCTestCase {
     func testDeepSeekRunsMultipleRoundsAndCanBeStopped() {
         continueAfterFailure = false
         let app = XCUIApplication()
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         let button = app.buttons["camera.ai"]
         XCTAssertTrue(button.waitForExistence(timeout: 15))

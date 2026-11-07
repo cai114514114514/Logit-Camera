@@ -27,13 +27,6 @@ actor CaptureRecordStore {
         save(records)
     }
 
-    func setChosen(_ index: Int, for photoID: UUID) {
-        var records = load()
-        guard let position = records.lastIndex(where: { $0.photoID == photoID }) else { return }
-        records[position].chosenIndex = index
-        save(records)
-    }
-
     private func load() -> [CaptureRecord] {
         // 旧格式（v1 方案）解码失败时从空开始。
         (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([CaptureRecord].self, from: $0) } ?? []

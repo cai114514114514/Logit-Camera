@@ -5,6 +5,7 @@ final class ApertureTests: XCTestCase {
     func testMainCameraPhysicallyChangesAperture() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         XCTAssertTrue(app.buttons["camera.controls"].waitForExistence(timeout: 15))
         let banner = XCUIApplication(bundleIdentifier: "com.apple.springboard").descendants(matching: .any)["NotificationShortLookView"].firstMatch

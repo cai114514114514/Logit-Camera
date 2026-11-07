@@ -8,6 +8,7 @@ final class InteractionTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-LogitDemo", "composing"]
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         XCTAssertTrue(app.buttons["camera.shutter"].waitForExistence(timeout: 15))
 
@@ -26,6 +27,7 @@ final class InteractionTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-LogitDemo", "composing"]
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         let ai = app.buttons["camera.ai"]
         XCTAssertTrue(ai.waitForExistence(timeout: 15))
@@ -44,6 +46,7 @@ final class InteractionTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-LogitOfflineDirector"]
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         let ai = app.buttons["camera.ai"]
         XCTAssertTrue(ai.waitForExistence(timeout: 15))
@@ -70,6 +73,7 @@ final class InteractionTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-LogitOfflineDirector"]
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         let ai = app.buttons["camera.ai"]
         XCTAssertTrue(ai.waitForExistence(timeout: 15))
@@ -79,7 +83,9 @@ final class InteractionTests: XCTestCase {
         wait(for: [expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: photo)], timeout: 20)
         Thread.sleep(forTimeInterval: 2)
         photo.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["photo.alternates"].firstMatch.waitForExistence(timeout: 10))
+        // 只保留最好的一张：详情里不再有连拍备选。
+        XCTAssertTrue(app.staticTexts["photo.dimensions"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["photo.alternates"].firstMatch.exists)
     }
 
     /// C1：取景实时调色，自定义着色器（暗角）编译或安全跳过后都能正常出片。
@@ -88,6 +94,7 @@ final class InteractionTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-LogitLook", "vignette"]
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         let shutter = app.buttons["camera.shutter"]
         XCTAssertTrue(shutter.waitForExistence(timeout: 15))
@@ -112,6 +119,7 @@ final class InteractionTests: XCTestCase {
     func testWarmLookPreview() {
         let app = XCUIApplication()
         app.launchArguments = ["-LogitLook", "warm"]
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         XCTAssertTrue(app.buttons["camera.shutter"].waitForExistence(timeout: 15))
         Thread.sleep(forTimeInterval: 2)
@@ -135,6 +143,7 @@ final class InteractionTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-LogitPreset", "胶片暖"]
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["look.strip"].firstMatch.waitForExistence(timeout: 15))
         XCTAssertTrue(app.sliders["look.strength"].waitForExistence(timeout: 5))
@@ -151,6 +160,7 @@ final class InteractionTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-LogitPreset", "通透"]
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         let adjust = app.buttons["look.adjust"]
         XCTAssertTrue(adjust.waitForExistence(timeout: 15))
@@ -165,6 +175,7 @@ final class InteractionTests: XCTestCase {
     func testRelookInPhotoDetail() {
         continueAfterFailure = false
         let app = XCUIApplication()
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         let shutter = app.buttons["camera.shutter"]
         XCTAssertTrue(shutter.waitForExistence(timeout: 15))
@@ -187,6 +198,7 @@ final class InteractionTests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["-LogitOfflineDirector"]
+        app.launchArguments.append("-LogitNoLibrary")
         app.launch()
         let ai = app.buttons["camera.ai"]
         XCTAssertTrue(ai.waitForExistence(timeout: 15))

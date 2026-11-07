@@ -23,8 +23,6 @@ final class CameraModel {
     var capturePending = false
     var photoSaved = false
     var archivedURL: URL?
-    /// 最近一张照片所在连拍组的备选（含 AI 选中的那张）。
-    var alternates: [BurstAlternate] = []
     /// 连拍已拍完、正在本机选片。
     var isSelecting = false
     /// 每次按下快门（手动或自动）加一，驱动取景闪白。
@@ -91,7 +89,8 @@ final class CameraModel {
             // AI 方案决定镜头、曝光与画幅；读数标为 AI 设定。
             self?.agentOwnsSettings = true
         }
-        Task.detached(priority: .background) { BurstStore.purge() }
+        // 只存最好的一张：清掉旧版本留在 App 里的连拍备选。
+        Task.detached(priority: .background) { BurstStore.removeAll() }
         BuiltinShaders.warmUp()
         #if DEBUG
         if let debugLook = DebugLooks.current { selectLook(debugLook) }
@@ -252,7 +251,6 @@ final class CameraModel {
                 return (result, images)
             }.value
             let best = BurstSelector.best(qualities, genre: genre)
-            let scores = BurstSelector.scores(qualities, genre: genre)
             let original = photos[min(best, photos.count - 1)]
             let chosen = await Self.graded(original, look: look, correction: correction)
             if sequence == burstSequence {
@@ -260,11 +258,7 @@ final class CameraModel {
                 latestCorrectionOps = correction
             }
             agent.record(photoID: chosen.id, automatic: automatic)
-            let stored: [BurstAlternate] = await Task.detached(priority: .utility) {
-                guard photos.count > 1 else { return [] }
-                try? BurstStore.save(photos, chosen: best, photoID: chosen.id, genre: genre, scores: scores, look: look)
-                return BurstStore.load(photoID: chosen.id)
-            }.value
+            // 其余几张不落盘，随这个任务结束一起释放。
             guard sequence == burstSequence else {
                 // 更新的一组已经到了：这一组只保存，不改界面。
                 Task { try? await PhotoLibrary.save(chosen) }
@@ -272,7 +266,6 @@ final class CameraModel {
             }
             isSelecting = false
             show(chosen)
-            alternates = stored
             if thumbs.count == photos.count, photos.count > 1 {
                 let preview = BurstPreview(thumbnails: thumbs.map(UIImage.init(cgImage:)), chosen: best)
                 burstPreview = preview
@@ -284,20 +277,6 @@ final class CameraModel {
             }
             isSaving = true
             await persistAndSave(chosen)
-        }
-    }
-
-    /// 把备选里的另一张也存入相册，并记下用户的选择（子项目 4 学习用）。
-    func saveAlternate(_ alternate: BurstAlternate) async {
-        guard let current = latestPhoto, let data = try? Data(contentsOf: alternate.url) else { return }
-        let photo = CapturedPhoto(data: data, aperture: current.aperture, iso: current.iso,
-                                  exposureSeconds: current.exposureSeconds)
-        do {
-            try await PhotoLibrary.save(photo)
-            await CaptureRecordStore.shared.setChosen(alternate.index, for: current.id)
-            post("已把这张也存入照片图库")
-        } catch {
-            post(error.localizedDescription, warning: true)
         }
     }
 
@@ -456,7 +435,6 @@ final class CameraModel {
         case .photo(let original):
             automaticCapturePending = false
             capturePending = false
-            alternates = []
             let look = pendingLook
             isSaving = true
             Task {
