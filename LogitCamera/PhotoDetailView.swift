@@ -6,6 +6,16 @@ import UniformTypeIdentifiers
 private struct PhotoExport: Transferable {
     let data: Data
     static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .heic) { $0.data }
+            .suggestedFileName("Logit-Photo.heic")
+        DataRepresentation(exportedContentType: .jpeg) { $0.data }
+            .suggestedFileName("Logit-Photo.jpg")
+    }
+}
+
+private struct JPEGExport: Transferable {
+    let data: Data
+    static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(exportedContentType: .jpeg) { $0.data }
             .suggestedFileName("Logit-Photo.jpg")
     }
@@ -164,9 +174,18 @@ struct PhotoDetailView: View {
             }
             .disabled(model.photoSaved || model.isSaving)
             if let image = model.preview ?? model.thumbnail {
-                ShareLink(item: PhotoExport(data: photo.data),
-                          preview: SharePreview("Logit Camera", image: Image(uiImage: image))) {
-                    Label("分享原图", systemImage: "square.and.arrow.up").frame(minHeight: 44)
+                Group {
+                    if photo.isHEIC {
+                        ShareLink(item: PhotoExport(data: photo.data),
+                                  preview: SharePreview("Logit Camera", image: Image(uiImage: image))) {
+                            Label("分享照片", systemImage: "square.and.arrow.up").frame(minHeight: 44)
+                        }
+                    } else {
+                        ShareLink(item: JPEGExport(data: photo.data),
+                                  preview: SharePreview("Logit Camera", image: Image(uiImage: image))) {
+                            Label("分享照片", systemImage: "square.and.arrow.up").frame(minHeight: 44)
+                        }
+                    }
                 }
             }
         }

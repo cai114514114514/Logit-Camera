@@ -94,9 +94,9 @@ struct CameraView: View {
     }
 
     private var viewfinder: some View {
-        CameraPreview(session: model.capture.session,
-                      onFocus: focus,
-                      markerColor: agent.isEnabled ? UIColor(Theme.Palette.accent) : .white)
+        LivePreview(frames: model.capture.frames, recipe: model.look,
+                    onFocus: focus,
+                    markerColor: agent.isEnabled ? UIColor(Theme.Palette.accent) : .white)
             .background(.black)
             .overlay {
                 // AI 的光：光晕（视线）在画面里，极光沿构图框边缘。

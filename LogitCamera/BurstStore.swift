@@ -13,7 +13,8 @@ enum BurstStore {
     private static var root: URL { URL.applicationSupportDirectory.appendingPathComponent("Bursts", isDirectory: true) }
 
     /// 写入整组照片与清单（后台调用）。
-    static func save(_ photos: [CapturedPhoto], chosen: Int, photoID: UUID, genre: GenreID, scores: [Double]) throws {
+    static func save(_ photos: [CapturedPhoto], chosen: Int, photoID: UUID, genre: GenreID, scores: [Double],
+                     look: LookRecipe? = nil) throws {
         let directory = root.appendingPathComponent(photoID.uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var files: [String] = []
@@ -22,7 +23,8 @@ enum BurstStore {
             try photo.data.write(to: directory.appendingPathComponent(name), options: .atomic)
             files.append(name)
         }
-        let manifest = BurstManifest(photoID: photoID, date: Date(), genre: genre, chosen: chosen, files: files, scores: scores)
+        let manifest = BurstManifest(photoID: photoID, date: Date(), genre: genre, chosen: chosen, files: files, scores: scores,
+                                     look: look?.isIdentity == false ? look : nil)
         try JSONEncoder().encode(manifest).write(to: directory.appendingPathComponent("manifest.json"), options: .atomic)
     }
 

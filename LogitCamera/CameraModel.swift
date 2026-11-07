@@ -31,6 +31,10 @@ final class CameraModel {
     var shutterTick = 0
     /// 选片完成后短暂展示的一组缩略图。
     var burstPreview: BurstPreview?
+    /// 当前滤镜配方：取景实时生效，成片按快门按下那一刻的配方渲染。
+    var look: LookRecipe = .identity
+    /// 单张拍摄（AI 关闭）按下快门时冻结的配方。
+    @ObservationIgnored private var pendingLook: LookRecipe = .identity
     var notice: CameraNotice?
     /// 当前手动参数是否由 AI 设定。用户任何接管都会清除。
     var agentOwnsSettings = false
@@ -69,6 +73,9 @@ final class CameraModel {
             self?.agentOwnsSettings = true
         }
         Task.detached(priority: .background) { BurstStore.purge() }
+        #if DEBUG
+        if let debugLook = DebugLooks.current { look = debugLook }
+        #endif
     }
 
     func activate() {
@@ -185,6 +192,7 @@ final class CameraModel {
             capturePending = true
             notice = nil
             shutterTick += 1
+            pendingLook = look
             capture.capture()
         }
     }
@@ -194,11 +202,12 @@ final class CameraModel {
         capturePending = true
         notice = nil
         shutterTick += 1
+        pendingLook = look
         capture.captureBurst(count: Self.burstCount, crop: crop, ratio: ratio)
     }
 
     /// 连拍拍完：先让 AI 进入冷却、释放快门，再在后台选片；最好的一张走正常保存流程，其余存为备选。
-    private func select(_ photos: [CapturedPhoto], automatic: Bool) {
+    private func select(_ photos: [CapturedPhoto], automatic: Bool, look: LookRecipe) {
         burstSequence += 1
         let sequence = burstSequence
         let genre = agent.plan?.genre ?? .general
@@ -215,11 +224,12 @@ final class CameraModel {
             }.value
             let best = BurstSelector.best(qualities, genre: genre)
             let scores = BurstSelector.scores(qualities, genre: genre)
-            let chosen = photos[min(best, photos.count - 1)]
+            let original = photos[min(best, photos.count - 1)]
+            let chosen = await Self.graded(original, look: look)
             agent.record(photoID: chosen.id, automatic: automatic)
             let stored: [BurstAlternate] = await Task.detached(priority: .utility) {
                 guard photos.count > 1 else { return [] }
-                try? BurstStore.save(photos, chosen: best, photoID: chosen.id, genre: genre, scores: scores)
+                try? BurstStore.save(photos, chosen: best, photoID: chosen.id, genre: genre, scores: scores, look: look)
                 return BurstStore.load(photoID: chosen.id)
             }.value
             guard sequence == burstSequence else {
@@ -271,7 +281,7 @@ final class CameraModel {
             let directory = URL.documentsDirectory.appendingPathComponent("待保存照片", isDirectory: true)
             // A failed or denied Photos export must not destroy the original.
             localURL = try? await Task.detached(priority: .userInitiated) {
-                try PhotoArchive(directory: directory).store(photo.data)
+                try PhotoArchive(directory: directory).store(photo.data, fileExtension: photo.isHEIC ? "heic" : "jpg")
             }.value
             if latestPhoto?.id == photo.id { archivedURL = localURL }
         }
@@ -299,6 +309,14 @@ final class CameraModel {
         photoPixelSize = nil
         archivedURL = nil
         notice = nil
+    }
+
+    /// 按配方渲染成片（后台）；配方为空或渲染失败时返回原片，照片照常保存。
+    nonisolated private static func graded(_ photo: CapturedPhoto, look: LookRecipe) async -> CapturedPhoto {
+        guard !look.isIdentity else { return photo }
+        return await Task.detached(priority: .userInitiated) {
+            (try? LookRenderer.renderPhoto(photo.data, recipe: look)).map(photo.replacingData) ?? photo
+        }.value
     }
 
     private func show(_ photo: CapturedPhoto) {
@@ -347,19 +365,23 @@ final class CameraModel {
             post(message, warning: true)
             capturePending = false
             if automaticCapturePending { agent.fireRejected(); automaticCapturePending = false }
-        case .photo(let photo):
+        case .photo(let original):
             automaticCapturePending = false
             capturePending = false
             alternates = []
-            show(photo)
+            let look = pendingLook
             isSaving = true
-            Task { await persistAndSave(photo) }
+            Task {
+                let photo = await Self.graded(original, look: look)
+                show(photo)
+                await persistAndSave(photo)
+            }
         case .burst(let photos):
             let automatic = automaticCapturePending
             automaticCapturePending = false
             capturePending = false
             agent.captured(automatic: automatic)
-            select(photos, automatic: automatic)
+            select(photos, automatic: automatic, look: pendingLook)
         }
     }
 }

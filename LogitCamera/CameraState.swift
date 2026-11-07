@@ -52,11 +52,31 @@ struct CameraState: Sendable {
 }
 
 struct CapturedPhoto: Sendable, Identifiable {
-    let id = UUID()
+    let id: UUID
     let data: Data
     let aperture: Double?
     let iso: Double?
     let exposureSeconds: Double?
+
+    init(id: UUID = UUID(), data: Data, aperture: Double?, iso: Double?, exposureSeconds: Double?) {
+        self.id = id
+        self.data = data
+        self.aperture = aperture
+        self.iso = iso
+        self.exposureSeconds = exposureSeconds
+    }
+
+    /// 同一张照片换成另一份数据（例如按配方渲染后的成片），id 与拍摄参数不变。
+    func replacingData(_ data: Data) -> CapturedPhoto {
+        CapturedPhoto(id: id, data: data, aperture: aperture, iso: iso, exposureSeconds: exposureSeconds)
+    }
+
+    /// HEIF 文件头（ftyp heic/heix/mif1）。
+    var isHEIC: Bool {
+        guard data.count > 12 else { return false }
+        let brand = String(decoding: data[4..<12], as: UTF8.self)
+        return brand.hasPrefix("ftyp") && ["heic", "heix", "mif1", "hevc"].contains(String(brand.dropFirst(4)))
+    }
 }
 
 enum CameraEvent: Sendable {

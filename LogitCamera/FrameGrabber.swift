@@ -20,6 +20,13 @@ final class FrameGrabber: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     private var buffer: CVPixelBuffer?
     private var timestamp: TimeInterval = 0
     private let context = CIContext(options: [.cacheIntermediates: false])
+    private var frameHandler: (@Sendable (CVPixelBuffer) -> Void)?
+
+    /// 每一帧的回调（在帧队列上调用），实时取景用它渲染。
+    var onFrame: (@Sendable (CVPixelBuffer) -> Void)? {
+        get { lock.withLock { frameHandler } }
+        set { lock.withLock { frameHandler = newValue } }
+    }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
@@ -27,7 +34,9 @@ final class FrameGrabber: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         lock.lock()
         buffer = image
         timestamp = ProcessInfo.processInfo.systemUptime
+        let handler = frameHandler
         lock.unlock()
+        handler?(image)
     }
 
     /// 最新的取景缓冲及其时间（感知层使用）。超过 2 秒的旧帧视为无效。
