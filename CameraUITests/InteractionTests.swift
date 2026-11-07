@@ -120,4 +120,63 @@ final class InteractionTests: XCTestCase {
         shot.lifetime = .keepAlways
         add(shot)
     }
+
+    private func attachShot(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    /// C2：滤镜条打开、选中「胶片暖」，拍照正常出片。
+    @MainActor
+    func testPresetLookCaptures() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-LogitPreset", "胶片暖"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["look.strip"].firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(app.sliders["look.strength"].waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 2.5)
+        attachShot(app, "looks-strip-film")
+        app.buttons["camera.shutter"].tap()
+        let photo = app.buttons["camera.photo"]
+        wait(for: [expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: photo)], timeout: 15)
+    }
+
+    /// C2：调整面板能打开，滑杆可见。
+    @MainActor
+    func testAdjustSheetOpens() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-LogitPreset", "通透"]
+        app.launch()
+        let adjust = app.buttons["look.adjust"]
+        XCTAssertTrue(adjust.waitForExistence(timeout: 15))
+        adjust.tap()
+        XCTAssertTrue(app.staticTexts["曝光"].waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 1)
+        attachShot(app, "looks-adjust")
+    }
+
+    /// C2：照片详情里换滤镜并出现「另存为新照片」。
+    @MainActor
+    func testRelookInPhotoDetail() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launch()
+        let shutter = app.buttons["camera.shutter"]
+        XCTAssertTrue(shutter.waitForExistence(timeout: 15))
+        Thread.sleep(forTimeInterval: 1)
+        shutter.tap()
+        let photo = app.buttons["camera.photo"]
+        wait(for: [expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: photo)], timeout: 15)
+        photo.tap()
+        let mono = app.buttons["detail.look.黑白"]
+        XCTAssertTrue(mono.waitForExistence(timeout: 10))
+        mono.tap()
+        XCTAssertTrue(app.buttons["detail.saveLook"].waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 2)
+        attachShot(app, "looks-relook-mono")
+    }
 }
